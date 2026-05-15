@@ -1,0 +1,171 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+    overflow-y: auto;
+    /* Static fallback so the JS-loading window doesn't flash pure black before
+       the canvas mounts. Once the canvas draws, it sits on top of this. */
+    background:
+      radial-gradient(60% 55% at 18% 22%, rgba(180, 80, 130, 0.32), transparent 65%),
+      radial-gradient(55% 55% at 80% 18%, rgba(180, 110, 80, 0.28), transparent 65%),
+      radial-gradient(70% 60% at 50% 90%, rgba(120, 100, 200, 0.3), transparent 65%),
+      radial-gradient(60% 60% at 28% 60%, rgba(80, 100, 180, 0.28), transparent 65%),
+      #08080d;
+  }
+  /* Global scrollbar — thin floating-glass thumb that thickens on hover.
+     The `border: 3px solid transparent + background-clip: padding-box` trick
+     makes the visible thumb narrower than the actual hit area, so it's still
+     easy to grab while staying visually subtle. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.14);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+    transition: background-color 0.18s ease, border-width 0.18s ease;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.34);
+    border-width: 2px;
+  }
+  *::-webkit-scrollbar-thumb:active {
+    background-color: rgba(255, 255, 255, 0.5);
+    border-width: 2px;
+  }
+  ::selection {
+    background: rgba(255, 255, 255, 0.25);
+  }
+}
+
+@layer base {
+  /* Native range input → minimal glass slider */
+  input.glass-slider[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+    height: 18px;
+    /* track fill grows with --pct (set inline) */
+    --pct: 0%;
+  }
+  input.glass-slider[type='range']::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 999px;
+    background: linear-gradient(
+      to right,
+      rgba(255, 255, 255, 0.85) var(--pct),
+      rgba(255, 255, 255, 0.15) var(--pct)
+    );
+  }
+  input.glass-slider[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: white;
+    border: 1.5px solid rgba(0, 0, 0, 0.25);
+    margin-top: -6px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    cursor: grab;
+  }
+  input.glass-slider[type='range']::-webkit-slider-thumb:active {
+    cursor: grabbing;
+  }
+  input.glass-slider[type='range']::-moz-range-track {
+    height: 4px;
+    border-radius: 999px;
+    background: linear-gradient(
+      to right,
+      rgba(255, 255, 255, 0.85) var(--pct),
+      rgba(255, 255, 255, 0.15) var(--pct)
+    );
+  }
+  input.glass-slider[type='range']::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: white;
+    border: 1.5px solid rgba(0, 0, 0, 0.25);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    cursor: grab;
+  }
+
+  /* Native color input → circular swatch */
+  input.color-swatch[type='color'] {
+    -webkit-appearance: none;
+    appearance: none;
+    border: none;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  input.color-swatch[type='color']::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+  input.color-swatch[type='color']::-webkit-color-swatch {
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 9999px;
+  }
+  input.color-swatch[type='color']::-moz-color-swatch {
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 9999px;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-white/10 dark:bg-black/20
+      backdrop-blur-2xl backdrop-saturate-150
+      border border-white/20 dark:border-white/10
+      shadow-[0_8px_32px_rgba(0,0,0,0.18)];
+  }
+  .glass-strong {
+    @apply bg-white/15 dark:bg-black/30
+      backdrop-blur-2xl backdrop-saturate-150
+      border border-white/25 dark:border-white/10
+      shadow-[0_12px_48px_rgba(0,0,0,0.25)];
+  }
+  .glass-hover {
+    @apply transition-all duration-300 ease-out
+      hover:bg-white/15 dark:hover:bg-black/30
+      hover:border-white/30 dark:hover:border-white/15
+      hover:shadow-[0_12px_40px_rgba(0,0,0,0.22)];
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "星启页",
+    "description": "Display name shown in chrome://extensions and the Chrome Web Store."
+  },
+  "extDescription": {
+    "message": "星启页 NovaTab · 让每一次打开新标签页，都从清爽高效开始。集成搜索、Pin、收藏、AI 整理与玻璃质感设计。",
+    "description": "Long description for the Web Store listing."
+  }
+}
