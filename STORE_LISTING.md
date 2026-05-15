@@ -134,20 +134,36 @@ Tick exactly the boxes below and tick the **two compliance statements** at the b
 
 ## 8. Store assets to upload
 
-Prepare these before hitting Submit. See `RELEASE.md` for capture tips.
+Prepare these before hitting Submit. See `RELEASE.md` for capture + resize tips.
 
 | Asset | Size | Required? | Notes |
 |---|---|---|---|
 | Icon | 128×128 PNG | ✅ | Already at `public/icons/128.png` — Chrome reuses it. |
-| Screenshots | 1280×800 **or** 640×400 PNG/JPEG | ✅ at least 1 (up to 5) | Show: (1) default mesh-gradient view with pins, (2) AI organize result, (3) Library drawer, (4) wallpaper customization, (5) settings drawer. |
+| Screenshots | **1280×800** or 640×400 PNG/JPEG | ✅ at least 1 (up to 5) | Five captured (see list below). Source files are 3024×1654 — must be resized before upload. |
 | Small promo tile | 440×280 PNG/JPEG | optional | Recommended for better placement. |
 | Marquee promo tile | 1400×560 PNG/JPEG | optional | Only needed if you apply for featured placement. |
+
+### The five screenshots captured
+
+Order them in the Dashboard so the strongest one (the homepage with pins) is first — that's the one shown in search results.
+
+1. **Homepage / Speed Dial** — clock + search bar + grid of pinned sites over the mesh-gradient background. The hero shot.
+2. **Settings drawer** — cloud sync section (with the synced-account chip), wallpaper preview with overlay + blur sliders, "show seconds" toggle, gradient colors panel.
+3. **Library drawer** — bookmark + history search; toggle between "全部书签 / 浏览历史".
+4. **AI bookmark organize view** — the "我的收藏 / 我的书签" page showing AI-grouped categories plus the "AI 自动分类" trigger and the "完成 · 79 个死链" affordance.
+5. **Site test dialog** — broken-link checker with bulk selection and "删除选中的 N 个".
 
 ---
 
 ## 9. Privacy policy URL
 
-You will paste a URL here. Draft text is in `PRIVACY.md` — host it somewhere public (GitHub Pages, a Notion public page, your blog) and put the URL in the Dashboard.
+Paste this into the Dashboard:
+
+```
+https://github.com/ljw0404/NovaTab/blob/main/PRIVACY.md
+```
+
+GitHub blob URLs are publicly accessible without login, which is all the Web Store reviewer checks. If you later move to a custom domain or GitHub Pages, just update the field in the Dashboard.
 
 ---
 

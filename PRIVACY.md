@@ -105,4 +105,6 @@ We may update this policy as the extension evolves. Material changes will be ref
 
 Questions or concerns: **lijiwang44@gmail.com**
 
-Source code: _(add your public repo URL here once published)_
+Source code: https://github.com/ljw0404/NovaTab
+
+Issues / bug reports: https://github.com/ljw0404/NovaTab/issues
