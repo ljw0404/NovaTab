@@ -4,7 +4,7 @@
     "description": "Display name shown in chrome://extensions and the Chrome Web Store."
   },
   "extDescription": {
-    "message": "NovaTab — every new tab, starting clean and focused. A glass-styled start page with search, pins, bookmarks, history, and AI organization.",
-    "description": "Long description for the Web Store listing."
+    "message": "NovaTab — a glass-styled new tab page with search, Speed Dial pins, bookmarks, history, and AI bookmark organization.",
+    "description": "Short description (≤132 chars) shown in chrome://extensions and Web Store search results."
   }
 }

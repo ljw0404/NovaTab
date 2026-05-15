@@ -19,11 +19,13 @@ Add both `English` and `Chinese (Simplified)` under "Languages" so the Web Store
 
 ## 2. Summary (short description, ≤ 132 chars)
 
-**English**
-> A glass-styled new tab page with search, pinned sites, bookmarks, history, and AI-powered bookmark organization.
+This text comes from `public/_locales/<lang>/messages.json → extDescription.message` because the manifest uses `__MSG_extDescription__`. Keep both locales ≤ 132 chars or Web Store upload validation will fail.
 
-**中文**
-> 玻璃质感新标签页：搜索、固定网站、收藏、历史与 AI 智能分类，开启每一次浏览都更高效。
+**English** (119 chars)
+> NovaTab — a glass-styled new tab page with search, Speed Dial pins, bookmarks, history, and AI bookmark organization.
+
+**中文** (106 chars)
+> 星启页：玻璃质感新标签页，集成搜索、固定网站、书签、历史与 AI 智能分类。
 
 ---
 

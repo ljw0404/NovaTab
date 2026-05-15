@@ -4,7 +4,7 @@
     "description": "Display name shown in chrome://extensions and the Chrome Web Store."
   },
   "extDescription": {
-    "message": "星启页 NovaTab · 让每一次打开新标签页，都从清爽高效开始。集成搜索、Pin、收藏、AI 整理与玻璃质感设计。",
-    "description": "Long description for the Web Store listing."
+    "message": "星启页：玻璃质感新标签页，集成搜索、固定网站、书签、历史与 AI 智能分类。",
+    "description": "Short description (≤132 chars) shown in chrome://extensions and Web Store search results."
   }
 }
