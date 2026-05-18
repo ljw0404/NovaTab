@@ -9,7 +9,7 @@ export const MESSAGES = {
   'zh-CN': {
     search_placeholder: '搜索、跳转书签或历史  ·  按 / 聚焦',
     pinned: '我固定的',
-    bookmarks: '我的收藏',
+    recent_bookmarks: '最近收藏',
     most_visited: '常去站点',
     add: '添加',
     add_site_title: '固定一个网站',
@@ -209,7 +209,7 @@ export const MESSAGES = {
   en: {
     search_placeholder: 'Search, or jump to a bookmark / history  ·  press /',
     pinned: 'Pinned',
-    bookmarks: 'Bookmarks',
+    recent_bookmarks: 'Recently Added',
     most_visited: 'Most Visited',
     add: 'Add',
     add_site_title: 'Pin a site',

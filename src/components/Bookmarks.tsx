@@ -14,11 +14,35 @@ export function Bookmarks() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    if (!isExtensionContext() || !chrome.bookmarks?.getRecent) {
+    if (!isExtensionContext()) {
       setLoaded(true);
       return;
     }
+
+    // chrome.bookmarks lazily appears once the user grants the optional
+    // `bookmarks` permission. The bookmark-change events also only exist
+    // after that. We register them on the first successful load() rather
+    // than at mount, so the first-install flow (permission still missing)
+    // doesn't skip registration.
+    let bookmarkEventsBound = false;
+    const bindBookmarkEvents = () => {
+      if (bookmarkEventsBound) return;
+      if (!chrome.bookmarks?.onCreated || !chrome.bookmarks?.onRemoved) return;
+      chrome.bookmarks.onCreated.addListener(load);
+      chrome.bookmarks.onRemoved.addListener(load);
+      bookmarkEventsBound = true;
+    };
+
     const load = () => {
+      if (!chrome.bookmarks?.getRecent) {
+        // Permission still not granted — flip `loaded` so the parent
+        // collapses this section (the render branch hides on
+        // `loaded && items.length === 0`); we'll repopulate via the
+        // permissions-granted listener bound below.
+        setLoaded(true);
+        return;
+      }
+      bindBookmarkEvents();
       chrome.bookmarks.getRecent(20, nodes => {
         const list = nodes
           .filter(n => n.url)
@@ -32,17 +56,22 @@ export function Bookmarks() {
         setLoaded(true);
       });
     };
-    load();
-    // Refresh on permission grant (via custom event from PermissionBanner) or bookmark changes.
-    const createdEvent = chrome.bookmarks?.onCreated;
-    const removedEvent = chrome.bookmarks?.onRemoved;
-    createdEvent?.addListener(load);
-    removedEvent?.addListener(load);
+
+    // CRITICAL: register permissions-granted BEFORE we early-out on missing
+    // chrome.bookmarks. The previous version bailed at the top of this effect
+    // when chrome.bookmarks was undefined (= first-install flow before the
+    // user clicked 授权), which meant this listener was never bound — and so
+    // "最近收藏" required a manual refresh after granting.
     window.addEventListener('permissions-granted', load);
+
+    load();
+
     return () => {
-      createdEvent?.removeListener(load);
-      removedEvent?.removeListener(load);
       window.removeEventListener('permissions-granted', load);
+      if (bookmarkEventsBound) {
+        chrome.bookmarks?.onCreated?.removeListener(load);
+        chrome.bookmarks?.onRemoved?.removeListener(load);
+      }
     };
   }, []);
 
@@ -51,7 +80,7 @@ export function Bookmarks() {
   return (
     <div className="w-full max-w-6xl">
       <div className="mb-3 px-1 text-xs font-medium uppercase tracking-wider text-white/55">
-        {t('bookmarks')}
+        {t('recent_bookmarks')}
       </div>
       <div className="flex flex-wrap gap-2">
         {items.map(b => (
