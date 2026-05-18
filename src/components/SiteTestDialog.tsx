@@ -4,7 +4,9 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
+  ExternalLink,
   Loader2,
+  RefreshCw,
   RotateCcw,
   Trash2,
   X,
@@ -14,6 +16,7 @@ import { useEscKey } from '@/lib/hooks/useEscKey';
 import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { faviconUrl, hostname } from '@/lib/favicon';
 import { getProgress, useSiteTest } from '@/stores/siteTest';
+import { retestOne } from '@/lib/site-test-engine';
 
 /**
  * Viewer for the site-test progress / results. Open and close at will —
@@ -41,16 +44,29 @@ export function SiteTestDialog(props: {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  /** URLs currently being thorough-probed via the per-row 🔄 button. */
+  const [retesting, setRetesting] = useState<Set<string>>(new Set());
+  /** URLs that just flipped from dead → alive on a manual retest. Shows a
+   *  "✓ 可以访问了" toast for one beat before the row animates out of `dead`
+   *  on the next render. */
+  const [justAlive, setJustAlive] = useState<Set<string>>(new Set());
 
   // Pre-select all dead URLs once results come in (only the first time we see
   // a "done" state — afterwards leave selection alone so user edits stick).
+  //
+  // We also keep URLs in this list briefly after they flip dead → alive on a
+  // manual retest, so the row can flash a "✓ 可以访问了" toast before it
+  // slides out (otherwise the row would vanish the instant recordResult
+  // writes 'alive', giving the user no acknowledgement that retest worked).
   const dead = useMemo(() => {
     const out: { url: string; title: string }[] = [];
     for (const url of urls) {
-      if (results[url] === 'dead') out.push({ url, title: titles[url] || url });
+      if (results[url] === 'dead' || justAlive.has(url)) {
+        out.push({ url, title: titles[url] || url });
+      }
     }
     return out;
-  }, [urls, results, titles]);
+  }, [urls, results, titles, justAlive]);
 
   // Sync default-select-all on first arrival of `done` status.
   const [preselected, setPreselected] = useState(false);
@@ -80,6 +96,51 @@ export function SiteTestDialog(props: {
   const toggleAll = () => {
     if (selected.size === dead.length) setSelected(new Set());
     else setSelected(new Set(dead.map(d => d.url)));
+  };
+
+  const doRetestOne = async (url: string) => {
+    if (retesting.has(url)) return;
+    setRetesting(prev => {
+      const next = new Set(prev);
+      next.add(url);
+      return next;
+    });
+    try {
+      const result = await retestOne(url);
+      if (result === 'alive') {
+        // Flash a "now alive" hint, then drop from selection so a stray
+        // checked-state doesn't delete a working bookmark.
+        setSelected(prev => {
+          if (!prev.has(url)) return prev;
+          const next = new Set(prev);
+          next.delete(url);
+          return next;
+        });
+        setJustAlive(prev => {
+          const next = new Set(prev);
+          next.add(url);
+          return next;
+        });
+        // The recomputed `dead` memo will drop this URL on the next render
+        // since results[url] is now 'alive', so the flash is naturally
+        // short-lived — but clean up the set after a delay regardless so it
+        // doesn't grow forever if the user re-tests in weird orders.
+        setTimeout(() => {
+          setJustAlive(prev => {
+            if (!prev.has(url)) return prev;
+            const next = new Set(prev);
+            next.delete(url);
+            return next;
+          });
+        }, 1200);
+      }
+    } finally {
+      setRetesting(prev => {
+        const next = new Set(prev);
+        next.delete(url);
+        return next;
+      });
+    }
   };
 
   const doDelete = async () => {
@@ -213,40 +274,95 @@ export function SiteTestDialog(props: {
               <div className="space-y-1">
                 {dead.map(b => {
                   const checked = selected.has(b.url);
+                  const isRetesting = retesting.has(b.url);
+                  const isJustAlive = justAlive.has(b.url);
                   return (
-                    <label
+                    <div
                       key={b.url}
-                      className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-white/8"
+                      className="group flex items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-white/8"
                     >
-                      <span
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
-                          checked
-                            ? 'border-white/85 bg-white/85 text-black'
-                            : 'border-white/30 bg-transparent'
-                        }`}
-                      >
-                        {checked && <Check size={11} strokeWidth={3} />}
-                      </span>
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={checked}
-                        onChange={() => toggleOne(b.url)}
-                      />
+                      {/* Checkbox — its own clickable label so toggling
+                          selection doesn't conflict with the title link. */}
+                      <label className="flex shrink-0 cursor-pointer items-center">
+                        <span
+                          className={`flex h-4 w-4 items-center justify-center rounded border transition ${
+                            checked
+                              ? 'border-white/85 bg-white/85 text-black'
+                              : 'border-white/30 bg-transparent'
+                          }`}
+                        >
+                          {checked && <Check size={11} strokeWidth={3} />}
+                        </span>
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={checked}
+                          onChange={() => toggleOne(b.url)}
+                        />
+                      </label>
+
                       <img
                         src={faviconUrl(b.url, 32)}
                         alt=""
                         className="h-4 w-4 shrink-0 rounded"
                       />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm text-white/90">
-                          {b.title}
+
+                      {/* Title + hostname are a real link → opens the
+                          original URL in a new tab so the user can verify
+                          by hand that it's actually dead before deleting. */}
+                      <a
+                        href={b.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={t('site_test_open_link')}
+                        className="group/link min-w-0 flex-1"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-sm text-white/90 group-hover/link:underline">
+                            {b.title}
+                          </span>
+                          <ExternalLink
+                            size={11}
+                            className="shrink-0 text-white/35 opacity-0 transition group-hover/link:opacity-100"
+                          />
                         </div>
                         <div className="truncate text-[11px] text-white/45">
-                          {hostname(b.url)}
+                          {isJustAlive ? (
+                            <span className="text-emerald-300/90">
+                              {t('site_test_retest_now_alive')}
+                            </span>
+                          ) : (
+                            hostname(b.url)
+                          )}
                         </div>
-                      </div>
-                    </label>
+                      </a>
+
+                      {/* Per-row retest. Runs the thorough multi-angle probe
+                          (HEAD → GET → favicon image → www-swap retry).
+                          Hidden during the post-success flash since there's
+                          nothing left to retest. */}
+                      {isJustAlive ? (
+                        <CheckCircle2
+                          size={15}
+                          className="shrink-0 text-emerald-300"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => doRetestOne(b.url)}
+                          disabled={isRetesting}
+                          title={t('site_test_retest_one')}
+                          aria-label={t('site_test_retest_one')}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white/55 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+                        >
+                          {isRetesting ? (
+                            <Loader2 size={13} className="animate-spin" />
+                          ) : (
+                            <RefreshCw size={13} />
+                          )}
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>
