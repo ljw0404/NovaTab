@@ -42,6 +42,19 @@ export function SettingsDrawer() {
     if (!open) setView('main');
   }, [open]);
 
+  // Allow remote callers to jump straight into the AI sub-panel. Used by
+  // AiClassifyDialog's "前往配置" / "Open AI Settings" button so the user
+  // lands on the right screen with a single click — rather than having to
+  // hunt for the gear icon and then drill into the AI tab themselves.
+  useEffect(() => {
+    const onOpenAi = () => {
+      setOpen(true);
+      setView('ai');
+    };
+    window.addEventListener('open-ai-settings', onOpenAi);
+    return () => window.removeEventListener('open-ai-settings', onOpenAi);
+  }, []);
+
   const updateColor = (idx: number, value: string) =>
     setCustomColors(customColors.map((c, i) => (i === idx ? value : c)));
   const removeColor = (idx: number) =>

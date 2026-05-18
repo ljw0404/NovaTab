@@ -288,9 +288,12 @@ export function AiOrganizedBookmarks() {
             key="ai-classify-dialog"
             bookmarks={allBookmarks()}
             onOpenSettings={() => {
-              // Defer to the global settings drawer — we just close ours
-              // for now; the user clicks the gear icon to navigate.
+              // Close the AI dialog and pop the global settings drawer
+              // straight into its AI sub-panel via a window event the
+              // SettingsDrawer listens for. Saves the user from hunting
+              // for the gear icon → drilling into AI tab themselves.
               setAiDialogOpen(false);
+              window.dispatchEvent(new CustomEvent('open-ai-settings'));
             }}
             onApplyPreview={() => {
               if (pendingPreview) setCategories(pendingPreview);
