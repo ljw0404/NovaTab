@@ -32,14 +32,49 @@ export default function App() {
   // Boot the HubTabPinData engine: find/create the bookmark folder and start
   // listening for changes from anywhere (us, Chrome's bookmark manager, sync).
   useEffect(() => {
-    void initHubEngine();
-    // Site-test runs in the background and resumes from the persisted store
-    // if a test was in progress when the page was previously closed.
-    bootSiteTestEngine();
-    // AI classify can't *resume* (the streaming fetch dies with the page),
-    // but the engine boot marks any orphaned `inProgress` as interrupted so
-    // the dialog can offer a clean retry/discard path.
-    bootAiClassifyEngine();
+    const bootAll = () => {
+      // Hub engine bails early if chrome.bookmarks isn't available yet —
+      // calling it again after permissions are granted will populate Pins
+      // without requiring a page refresh.
+      void initHubEngine();
+      // Site-test runs in the background and resumes from the persisted store
+      // if a test was in progress when the page was previously closed.
+      bootSiteTestEngine();
+      // AI classify can't *resume* (the streaming fetch dies with the page),
+      // but the engine boot marks any orphaned `inProgress` as interrupted so
+      // the dialog can offer a clean retry/discard path.
+      bootAiClassifyEngine();
+    };
+
+    bootAll();
+
+    // First-install flow: at this point the optional `bookmarks` permission
+    // hasn't been granted yet, so chrome.bookmarks is `undefined` and the
+    // hub engine populated `entries: []`. When the user clicks "授权" in
+    // PermissionBanner (or toggles it on from chrome://extensions), re-run
+    // boot so Pins + "我的收藏" data load immediately instead of after a
+    // manual refresh.
+    //
+    // Listen on both channels:
+    //  - the custom event we dispatch from PermissionBanner.onGrant
+    //    (covers our in-page button flow),
+    //  - chrome.permissions.onAdded (covers grants made outside our UI,
+    //    e.g. the user enables the permission from the extensions page).
+    // All boot functions are idempotent, so double-firing is harmless.
+    window.addEventListener('permissions-granted', bootAll);
+    // @types/chrome@0.0.281 is missing `removeListener` on PermissionsAddedEvent;
+    // the runtime does have it (chrome.events.Event<T>), so cast through the
+    // structural shape we need rather than dragging in a types upgrade.
+    type PermEvt = {
+      addListener: (cb: () => void) => void;
+      removeListener: (cb: () => void) => void;
+    };
+    const permEvt = chrome.permissions?.onAdded as unknown as PermEvt | undefined;
+    permEvt?.addListener(bootAll);
+    return () => {
+      window.removeEventListener('permissions-granted', bootAll);
+      permEvt?.removeListener(bootAll);
+    };
   }, []);
 
   // Auto-sync: start the cloud sync engine while the user is signed in.
