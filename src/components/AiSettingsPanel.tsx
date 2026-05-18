@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -37,6 +37,26 @@ export function AiSettingsPanel() {
   const [testResult, setTestResult] = useState<
     { ok: true; count: number } | { ok: false; error: string } | null
   >(null);
+
+  /**
+   * Live substring filter for the dropdown.
+   *
+   *  - empty query → show all (initial open after fetch).
+   *  - query is exactly one of the known model ids → user has just
+   *    *selected* a model rather than typed a filter, so keep showing all
+   *    so the dropdown stays browsable. Otherwise the list would collapse
+   *    to the single selected row the moment they clicked it.
+   *  - otherwise → case-insensitive substring match.
+   */
+  const filteredModels = useMemo(() => {
+    const q = customModel.trim().toLowerCase();
+    if (!q) return models;
+    if (models.some(m => m.toLowerCase() === q)) return models;
+    return models.filter(m => m.toLowerCase().includes(q));
+  }, [models, customModel]);
+  const isFiltering =
+    customModel.trim().length > 0 &&
+    !models.some(m => m.toLowerCase() === customModel.trim().toLowerCase());
 
   /**
    * The model input field — the dropdown is portaled to <body>, so it needs
@@ -180,7 +200,14 @@ export function AiSettingsPanel() {
                   <input
                     type="text"
                     value={customModel}
-                    onChange={e => setCustomModel(e.target.value)}
+                    onChange={e => {
+                      setCustomModel(e.target.value);
+                      // Typing also re-opens the dropdown so the user can see
+                      // the filter narrow live — without this, dismissing the
+                      // menu (e.g. click-outside) and then typing would leave
+                      // the user filtering against an invisible list.
+                      if (models.length > 0) setModelMenuOpen(true);
+                    }}
                     // Once we've fetched the model list at least once,
                     // treat the input as a combobox trigger — focus or
                     // click re-opens the cached list without re-hitting
@@ -190,6 +217,17 @@ export function AiSettingsPanel() {
                     }}
                     onClick={() => {
                       if (models.length > 0) setModelMenuOpen(true);
+                    }}
+                    onKeyDown={e => {
+                      // ESC: if filtering, just clear the filter (keep the
+                      // dropdown open so the user can re-browse). If not
+                      // filtering, close the dropdown.
+                      if (e.key === 'Escape' && modelMenuOpen) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (isFiltering) setCustomModel('');
+                        else setModelMenuOpen(false);
+                      }
                     }}
                     placeholder={t('ai_model_placeholder')}
                     className="w-full rounded-xl bg-black/25 px-3 py-2 pr-28 text-sm text-white placeholder-white/35 outline-none ring-1 ring-white/10 focus:ring-white/30"
@@ -253,23 +291,29 @@ export function AiSettingsPanel() {
                 }}
                 className="glass-strong fixed z-[61] max-h-64 overflow-y-auto rounded-2xl p-1.5 shadow-2xl"
               >
-                {models.map(m => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => {
-                      setCustomModel(m);
-                      setModelMenuOpen(false);
-                    }}
-                    className={`block w-full truncate rounded-xl px-3 py-2 text-left text-sm transition ${
-                      m === customModel
-                        ? 'bg-white/20 text-white'
-                        : 'text-white/80 hover:bg-white/10'
-                    }`}
-                  >
-                    {m}
-                  </button>
-                ))}
+                {filteredModels.length === 0 ? (
+                  <div className="px-3 py-2.5 text-[11px] text-white/55">
+                    {t('ai_fetch_models_no_match')}
+                  </div>
+                ) : (
+                  filteredModels.map(m => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        setCustomModel(m);
+                        setModelMenuOpen(false);
+                      }}
+                      className={`block w-full truncate rounded-xl px-3 py-2 text-left text-sm transition ${
+                        m === customModel
+                          ? 'bg-white/20 text-white'
+                          : 'text-white/80 hover:bg-white/10'
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))
+                )}
               </motion.div>
             </>
           )}
