@@ -37,26 +37,32 @@ export function AiSettingsPanel() {
   const [testResult, setTestResult] = useState<
     { ok: true; count: number } | { ok: false; error: string } | null
   >(null);
+  /**
+   * True when `customModel` arrived via a click on a dropdown row rather
+   * than via the keyboard — the dropdown shows ALL models in that case
+   * (so the user can keep browsing) instead of collapsing the filter to
+   * just the selected row. Reset to false the moment the user types.
+   */
+  const [pickedFromList, setPickedFromList] = useState(false);
 
   /**
    * Live substring filter for the dropdown.
    *
-   *  - empty query → show all (initial open after fetch).
-   *  - query is exactly one of the known model ids → user has just
-   *    *selected* a model rather than typed a filter, so keep showing all
-   *    so the dropdown stays browsable. Otherwise the list would collapse
-   *    to the single selected row the moment they clicked it.
-   *  - otherwise → case-insensitive substring match.
+   *  - empty query → show all (just-opened state).
+   *  - `pickedFromList` → show all (the user clicked a row; the typed
+   *    value happens to equal a model id, but it's not "their filter").
+   *  - otherwise → case-insensitive substring match. Note this fires
+   *    even when the typed value happens to exactly match an existing
+   *    model id — that's still a filter, just a 1-result filter, and
+   *    suppressing it broke the "gpt-5" case.
    */
   const filteredModels = useMemo(() => {
     const q = customModel.trim().toLowerCase();
     if (!q) return models;
-    if (models.some(m => m.toLowerCase() === q)) return models;
+    if (pickedFromList) return models;
     return models.filter(m => m.toLowerCase().includes(q));
-  }, [models, customModel]);
-  const isFiltering =
-    customModel.trim().length > 0 &&
-    !models.some(m => m.toLowerCase() === customModel.trim().toLowerCase());
+  }, [models, customModel, pickedFromList]);
+  const isFiltering = !pickedFromList && customModel.trim().length > 0;
 
   /**
    * The model input field — the dropdown is portaled to <body>, so it needs
@@ -122,6 +128,17 @@ export function AiSettingsPanel() {
       }
       const list = await listModels(customBaseUrl, customApiKey);
       setModels(list);
+      // If the persisted customModel was one of the just-returned ids,
+      // treat it as a prior selection so opening the menu shows ALL
+      // models rather than narrowing to the single matching row.
+      if (
+        customModel &&
+        list.some(m => m.toLowerCase() === customModel.toLowerCase())
+      ) {
+        setPickedFromList(true);
+      } else {
+        setPickedFromList(false);
+      }
       setModelMenuOpen(true);
     } catch (e) {
       setModelsError(e instanceof Error ? e.message : String(e));
@@ -202,6 +219,10 @@ export function AiSettingsPanel() {
                     value={customModel}
                     onChange={e => {
                       setCustomModel(e.target.value);
+                      // Any keystroke means "user is filtering" — clear the
+                      // pickedFromList flag so the filter actually applies
+                      // even if their typed text happens to equal a model id.
+                      setPickedFromList(false);
                       // Typing also re-opens the dropdown so the user can see
                       // the filter narrow live — without this, dismissing the
                       // menu (e.g. click-outside) and then typing would leave
@@ -302,6 +323,8 @@ export function AiSettingsPanel() {
                       type="button"
                       onClick={() => {
                         setCustomModel(m);
+                        // Click = selection — show all on next re-open.
+                        setPickedFromList(true);
                         setModelMenuOpen(false);
                       }}
                       className={`block w-full truncate rounded-xl px-3 py-2 text-left text-sm transition ${
