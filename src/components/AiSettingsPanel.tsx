@@ -52,9 +52,11 @@ export function AiSettingsPanel() {
     width: number;
   } | null>(null);
 
-  // Whenever the menu is open, keep it positioned under the input. Recompute
-  // on resize; close on any scroll (capture phase catches scroll inside the
-  // drawer's overflow-y-auto column too).
+  // Whenever the menu is open, keep it positioned under the input. We follow
+  // (rather than close) on scroll/resize — the drawer's own scrollable
+  // column scrolls the input, so closing-on-scroll meant the user couldn't
+  // ever scroll the drawer with the menu open. rAF-throttle the recompute
+  // so a fast scroll doesn't trigger one setState per pixel.
   useEffect(() => {
     if (!modelMenuOpen) return;
     const update = () => {
@@ -64,12 +66,24 @@ export function AiSettingsPanel() {
       setMenuRect({ top: r.bottom + 6, left: r.left, width: r.width });
     };
     update();
-    const onScroll = () => setModelMenuOpen(false);
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', onScroll, true);
+
+    let raf = 0;
+    const scheduleUpdate = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        update();
+      });
+    };
+
+    window.addEventListener('resize', scheduleUpdate);
+    // Capture phase so scrolls inside the SettingsDrawer's overflow-y-auto
+    // column also keep the dropdown anchored.
+    window.addEventListener('scroll', scheduleUpdate, true);
     return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', onScroll, true);
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener('resize', scheduleUpdate);
+      window.removeEventListener('scroll', scheduleUpdate, true);
     };
   }, [modelMenuOpen]);
 
@@ -167,6 +181,16 @@ export function AiSettingsPanel() {
                     type="text"
                     value={customModel}
                     onChange={e => setCustomModel(e.target.value)}
+                    // Once we've fetched the model list at least once,
+                    // treat the input as a combobox trigger — focus or
+                    // click re-opens the cached list without re-hitting
+                    // the API.
+                    onFocus={() => {
+                      if (models.length > 0) setModelMenuOpen(true);
+                    }}
+                    onClick={() => {
+                      if (models.length > 0) setModelMenuOpen(true);
+                    }}
                     placeholder={t('ai_model_placeholder')}
                     className="w-full rounded-xl bg-black/25 px-3 py-2 pr-28 text-sm text-white placeholder-white/35 outline-none ring-1 ring-white/10 focus:ring-white/30"
                   />
