@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   RefreshCw,
@@ -17,12 +18,9 @@ import {
   requestHostAccess,
   ensureCurrentEndpointAccess,
 } from '@/lib/ai/host-access';
-import { ToggleRow } from './ui/ToggleRow';
 
 export function AiSettingsPanel() {
   const t = useT();
-  const useCustom = useAiConfig(s => s.useCustom);
-  const setUseCustom = useAiConfig(s => s.setUseCustom);
   const customBaseUrl = useAiConfig(s => s.customBaseUrl);
   const setCustomBaseUrl = useAiConfig(s => s.setCustomBaseUrl);
   const customApiKey = useAiConfig(s => s.customApiKey);
@@ -39,6 +37,41 @@ export function AiSettingsPanel() {
   const [testResult, setTestResult] = useState<
     { ok: true; count: number } | { ok: false; error: string } | null
   >(null);
+
+  /**
+   * The model input field — the dropdown is portaled to <body>, so it needs
+   * the live bounding rect of this anchor to position itself with
+   * `position: fixed`. Going through a portal escapes the multi-layer
+   * `overflow-hidden` chain in SettingsDrawer (drawer panel → tab container
+   * → scrollable content) that would otherwise clip the dropdown.
+   */
+  const modelFieldRef = useRef<HTMLDivElement>(null);
+  const [menuRect, setMenuRect] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+
+  // Whenever the menu is open, keep it positioned under the input. Recompute
+  // on resize; close on any scroll (capture phase catches scroll inside the
+  // drawer's overflow-y-auto column too).
+  useEffect(() => {
+    if (!modelMenuOpen) return;
+    const update = () => {
+      const el = modelFieldRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setMenuRect({ top: r.bottom + 6, left: r.left, width: r.width });
+    };
+    update();
+    const onScroll = () => setModelMenuOpen(false);
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [modelMenuOpen]);
 
   const fetchModels = async () => {
     if (!customBaseUrl || !customApiKey) return;
@@ -90,24 +123,14 @@ export function AiSettingsPanel() {
 
   return (
     <div className="space-y-2">
-      <ToggleRow
-        label={t('ai_use_custom')}
-        desc={t('ai_use_custom_desc')}
-        value={useCustom}
-        onChange={setUseCustom}
-      />
+      {/* Required-config banner — built-in AI service has been removed,
+          so this explains up-front why the fields below are mandatory. */}
+      <div className="flex items-start gap-2 rounded-2xl bg-amber-400/10 px-4 py-3 text-xs text-amber-100/85 ring-1 ring-amber-300/20">
+        <AlertCircle size={13} className="mt-0.5 shrink-0 text-amber-200/85" />
+        <span>{t('ai_config_required_desc')}</span>
+      </div>
 
-      <AnimatePresence initial={false}>
-        {useCustom ? (
-          <motion.div
-            key="custom-fields"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
-            className="overflow-hidden"
-          >
-            <div className="space-y-3 rounded-2xl bg-white/5 px-4 py-3.5">
+      <div className="space-y-3 rounded-2xl bg-white/5 px-4 py-3.5">
               <Field label={t('ai_base_url')}>
                 <input
                   type="url"
@@ -139,7 +162,7 @@ export function AiSettingsPanel() {
               </Field>
 
               <Field label={t('ai_model')}>
-                <div className="relative">
+                <div ref={modelFieldRef} className="relative">
                   <input
                     type="text"
                     value={customModel}
@@ -162,42 +185,6 @@ export function AiSettingsPanel() {
                       <ChevronDown size={10} className="opacity-60" />
                     )}
                   </button>
-
-                  <AnimatePresence>
-                    {modelMenuOpen && models.length > 0 && (
-                      <>
-                        <div
-                          className="fixed inset-0 z-30"
-                          onClick={() => setModelMenuOpen(false)}
-                        />
-                        <motion.div
-                          initial={{ opacity: 0, y: -4 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -4 }}
-                          transition={{ duration: 0.15 }}
-                          className="glass-strong absolute right-0 top-full z-40 mt-1.5 max-h-64 w-full overflow-y-auto rounded-2xl p-1.5"
-                        >
-                          {models.map(m => (
-                            <button
-                              key={m}
-                              type="button"
-                              onClick={() => {
-                                setCustomModel(m);
-                                setModelMenuOpen(false);
-                              }}
-                              className={`block w-full truncate rounded-xl px-3 py-2 text-left text-sm transition ${
-                                m === customModel
-                                  ? 'bg-white/20 text-white'
-                                  : 'text-white/80 hover:bg-white/10'
-                              }`}
-                            >
-                              {m}
-                            </button>
-                          ))}
-                        </motion.div>
-                      </>
-                    )}
-                  </AnimatePresence>
                 </div>
 
                 {modelsError && (
@@ -214,26 +201,57 @@ export function AiSettingsPanel() {
                   </div>
                 )}
               </Field>
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="builtin-hint"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
-            className="overflow-hidden"
-          >
-            <div className="rounded-2xl bg-white/5 px-4 py-3.5">
-              <div className="flex items-start gap-2 text-xs text-white/60">
-                <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-300/85" />
-                <span>{t('ai_use_builtin_desc')}</span>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </div>
+
+      {/* Model dropdown — portaled to <body> with `position: fixed` so it
+          escapes the SettingsDrawer's multi-layer overflow-hidden chain
+          (drawer panel → tabs container → scrollable column) which would
+          otherwise clip a normal absolute-positioned popover. */}
+      {createPortal(
+        <AnimatePresence>
+          {modelMenuOpen && models.length > 0 && menuRect && (
+            <>
+              {/* Click-outside catcher. Above the drawer's own backdrop
+                  (z-40) but below the dropdown itself. */}
+              <div
+                className="fixed inset-0 z-[60]"
+                onClick={() => setModelMenuOpen(false)}
+              />
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.15 }}
+                style={{
+                  top: menuRect.top,
+                  left: menuRect.left,
+                  width: menuRect.width,
+                }}
+                className="glass-strong fixed z-[61] max-h-64 overflow-y-auto rounded-2xl p-1.5 shadow-2xl"
+              >
+                {models.map(m => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      setCustomModel(m);
+                      setModelMenuOpen(false);
+                    }}
+                    className={`block w-full truncate rounded-xl px-3 py-2 text-left text-sm transition ${
+                      m === customModel
+                        ? 'bg-white/20 text-white'
+                        : 'text-white/80 hover:bg-white/10'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
       <div className="rounded-2xl bg-white/5 px-4 py-3.5">
         <button
