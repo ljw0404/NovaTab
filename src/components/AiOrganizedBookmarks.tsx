@@ -1,23 +1,21 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles,
   RotateCcw,
   Loader2,
-  AlertCircle,
   Folder,
-  Brain,
   MoreHorizontal,
   Activity,
+  AlertTriangle,
 } from 'lucide-react';
 import { useT } from '@/i18n';
 import {
   useBookmarkClassification,
   type Category,
 } from '@/stores/bookmarkClassification';
-import { classifyBookmarks } from '@/lib/ai/classify';
-import { ensureCurrentEndpointAccess } from '@/lib/ai/host-access';
 import { ClassifyPreviewDialog } from './ClassifyPreviewDialog';
+import { AiClassifyDialog } from './AiClassifyDialog';
 import { BookmarkActionMenu } from './BookmarkActionMenu';
 import { BookmarkEditDialog } from './BookmarkEditDialog';
 import { ConfirmDeleteDialog } from './ConfirmDeleteDialog';
@@ -31,6 +29,7 @@ import {
   updateBookmarkByUrl,
 } from '@/lib/chrome-bookmarks';
 import { getProgress, useSiteTest } from '@/stores/siteTest';
+import { isAiClassifyActive } from '@/lib/ai-classify-engine';
 
 export function AiOrganizedBookmarks() {
   const t = useT();
@@ -39,21 +38,18 @@ export function AiOrganizedBookmarks() {
   const setCategories = useBookmarkClassification(s => s.setCategories);
   const showOriginalView = useBookmarkClassification(s => s.showOriginalView);
   const restoreAiView = useBookmarkClassification(s => s.restoreAiView);
-  const inProgress = useBookmarkClassification(s => s.inProgress);
-  const beginClassify = useBookmarkClassification(s => s.beginClassify);
-  const updateProgress = useBookmarkClassification(s => s.updateProgress);
-  const endClassify = useBookmarkClassification(s => s.endClassify);
+  const pendingPreview = useBookmarkClassification(s => s.pendingPreview);
+  const setPendingPreview = useBookmarkClassification(s => s.setPendingPreview);
 
   const skipDeleteConfirm = useSettings(s => s.skipDeleteConfirm);
   const setSkipDeleteConfirm = useSettings(s => s.setSkipDeleteConfirm);
 
   const [originalCategories, setOriginalCategories] = useState<Category[]>([]);
   const [loadingOriginal, setLoadingOriginal] = useState(true);
-  const [classifying, setClassifying] = useState(false);
-  const [previewCategories, setPreviewCategories] = useState<Category[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reasoning, setReasoning] = useState(inProgress?.reasoning ?? '');
-  const [streamBytes, setStreamBytes] = useState(inProgress?.bytesReceived ?? 0);
+  /** Controls the AI classify dialog (config / running / interrupted / error states). */
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  /** Controls the preview dialog (shown when pendingPreview exists). */
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Per-bookmark interactions (right-click + "more" menu).
   const [menu, setMenu] = useState<
@@ -110,68 +106,18 @@ export function AiOrganizedBookmarks() {
     return result;
   };
 
-  const runClassify = async () => {
-    setError(null);
-    const bookmarks = allBookmarks();
-    if (bookmarks.length === 0) {
-      setError(t('ai_classify_no_bookmarks'));
-      return;
-    }
-    // Make sure we have cross-origin access to the configured AI endpoint
-    // BEFORE the network call (otherwise we'd hit the same CORS wall).
-    const access = await ensureCurrentEndpointAccess();
-    if (!access.ok) {
-      setError(
-        access.reason === 'denied'
-          ? t('ai_host_permission_denied')
-          : t('ai_host_invalid')
-      );
-      return;
-    }
-    setClassifying(true);
-    setReasoning('');
-    setStreamBytes(0);
-    beginClassify(bookmarks.length);
+  // Open the AI classify dialog — this used to start classification directly
+  // (with all the streaming UI inline). Now the dialog handles the entire
+  // lifecycle so the user can close it and let things run in the background.
+  const openAiDialog = () => setAiDialogOpen(true);
 
-    // Persistent writes (Zustand persist → localStorage) on every streamed
-    // token would be excessive. Throttle to at most once every 500ms so
-    // refreshing mid-classification recovers a recent-ish snapshot without
-    // hammering localStorage.
-    let lastPersist = 0;
-    let curReasoning = '';
-    let curBytes = 0;
-    const persistThrottled = () => {
-      const now = Date.now();
-      if (now - lastPersist < 500) return;
-      lastPersist = now;
-      updateProgress({ reasoning: curReasoning, bytesReceived: curBytes });
-    };
-
-    try {
-      const result = await classifyBookmarks(bookmarks, {
-        onReasoning: total => {
-          curReasoning = total;
-          setReasoning(total);
-          persistThrottled();
-        },
-        onContent: total => {
-          curBytes = total.length;
-          setStreamBytes(total.length);
-          persistThrottled();
-        },
-      });
-      setPreviewCategories(result);
-    } catch (e) {
-      setError(
-        t('ai_classify_error', {
-          err: e instanceof Error ? e.message : String(e),
-        })
-      );
-    } finally {
-      setClassifying(false);
-      endClassify();
+  // When the engine finishes a run it stashes the result in store.pendingPreview.
+  // Auto-show the preview dialog so the user doesn't miss it.
+  useEffect(() => {
+    if (pendingPreview && !previewOpen) {
+      setPreviewOpen(true);
     }
-  };
+  }, [pendingPreview, previewOpen]);
 
   // ─── Per-bookmark actions ───────────────────────────────────────────────
 
@@ -295,57 +241,13 @@ export function AiOrganizedBookmarks() {
               {t('restore_ai_view')}
             </button>
           )}
-          <button
-            type="button"
-            onClick={runClassify}
-            disabled={classifying || displayedCategories.length === 0}
-            className="flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-xs text-white transition hover:bg-white/25 disabled:opacity-40"
-          >
-            {classifying ? (
-              <Loader2 size={12} className="animate-spin" />
-            ) : (
-              <Sparkles size={12} />
-            )}
-            {classifying
-              ? t('ai_classifying')
-              : aiCategories !== null
-                ? t('ai_reclassify')
-                : t('ai_classify_btn')}
-          </button>
+          <AiClassifyButton
+            bookmarksCount={allBookmarks().length}
+            hasCategories={aiCategories !== null}
+            onClick={openAiDialog}
+          />
         </div>
       </div>
-
-      <AnimatePresence>
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-3 overflow-hidden"
-          >
-            <div className="flex items-start gap-2 rounded-2xl bg-red-500/15 px-4 py-2.5 text-xs text-red-200/85">
-              <AlertCircle size={13} className="mt-0.5 shrink-0" />
-              <span className="break-all">{error}</span>
-            </div>
-          </motion.div>
-        )}
-        {classifying && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-3 overflow-hidden"
-          >
-            <ClassifyingPanel
-              loadingText={t('ai_classify_loading', {
-                n: String(allBookmarks().length),
-              })}
-              reasoning={reasoning}
-              streamBytes={streamBytes}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {loadingOriginal ? (
         <div className="py-10 text-center text-sm text-white/40">{t('loading')}</div>
@@ -381,14 +283,43 @@ export function AiOrganizedBookmarks() {
       )}
 
       <AnimatePresence>
-        {previewCategories && (
+        {aiDialogOpen && (
+          <AiClassifyDialog
+            key="ai-classify-dialog"
+            bookmarks={allBookmarks()}
+            onOpenSettings={() => {
+              // Defer to the global settings drawer — we just close ours
+              // for now; the user clicks the gear icon to navigate.
+              setAiDialogOpen(false);
+            }}
+            onApplyPreview={() => {
+              if (pendingPreview) setCategories(pendingPreview);
+              setPendingPreview(null);
+              setPreviewOpen(false);
+              setAiDialogOpen(false);
+            }}
+            onDiscardPreview={() => {
+              setPendingPreview(null);
+              setPreviewOpen(false);
+              setAiDialogOpen(false);
+            }}
+            onClose={() => setAiDialogOpen(false)}
+          />
+        )}
+
+        {previewOpen && pendingPreview && !aiDialogOpen && (
           <ClassifyPreviewDialog
-            categories={previewCategories}
+            key="preview-dialog"
+            categories={pendingPreview}
             onApply={cats => {
               setCategories(cats);
-              setPreviewCategories(null);
+              setPendingPreview(null);
+              setPreviewOpen(false);
             }}
-            onCancel={() => setPreviewCategories(null)}
+            onCancel={() => {
+              setPendingPreview(null);
+              setPreviewOpen(false);
+            }}
           />
         )}
 
@@ -522,79 +453,9 @@ function CategoryCard({
   );
 }
 
-function ClassifyingPanel({
-  loadingText,
-  reasoning,
-  streamBytes,
-}: {
-  loadingText: string;
-  reasoning: string;
-  streamBytes: number;
-}) {
-  const t = useT();
-  const reasoningRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll reasoning panel to the bottom as new tokens arrive.
-  useLayoutEffect(() => {
-    const el = reasoningRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [reasoning]);
-
-  const hasReasoning = reasoning.length > 0;
-  const hasContent = streamBytes > 0;
-  const idle = !hasReasoning && !hasContent;
-
-  return (
-    <div className="glass rounded-2xl px-4 py-3.5">
-      <div className="flex items-center gap-2 text-sm text-white/85">
-        <Loader2 size={14} className="animate-spin text-white/85" />
-        <span className="flex-1 truncate">{loadingText}</span>
-        {hasContent && (
-          <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] tabular-nums text-white/65">
-            {t('ai_stream_bytes', { n: String(streamBytes) })}
-          </span>
-        )}
-        {idle && (
-          <span className="shrink-0 text-[10px] text-white/45">
-            {t('ai_stream_waiting')}
-          </span>
-        )}
-      </div>
-
-      <AnimatePresence>
-        {hasReasoning && (
-          <motion.div
-            initial={{ opacity: 0, height: 0, marginTop: 0 }}
-            animate={{ opacity: 1, height: 'auto', marginTop: 12 }}
-            exit={{ opacity: 0, height: 0, marginTop: 0 }}
-            transition={{ duration: 0.25, ease: [0.2, 0.8, 0.2, 1] }}
-            className="overflow-hidden"
-          >
-            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-amber-200/75">
-              <Brain size={11} />
-              {t('ai_thinking')}
-            </div>
-            <div
-              ref={reasoningRef}
-              className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/25 px-3 py-2 font-mono text-[11px] leading-relaxed text-white/70 ring-1 ring-white/5"
-            >
-              {reasoning}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Shimmer bar at the bottom — alive even when no text yet */}
-      <div className="mt-2.5 h-0.5 overflow-hidden rounded-full bg-white/5">
-        <motion.div
-          className="h-full w-1/3 rounded-full bg-gradient-to-r from-transparent via-white/60 to-transparent"
-          animate={{ x: ['-100%', '400%'] }}
-          transition={{ duration: 1.8, repeat: Infinity, ease: 'linear' }}
-        />
-      </div>
-    </div>
-  );
-}
+// The inline ClassifyingPanel was removed — its streaming UI now lives in
+// AiClassifyDialog (which is openable/closable independently of the underlying
+// fetch, so progress survives a dialog close or page refresh).
 
 /**
  * Group Chrome bookmarks by their immediate parent folder name into a
@@ -704,6 +565,76 @@ function SiteTestButton(props: {
         <Loader2 size={11} className="animate-spin" />
       ) : (
         <Activity size={11} />
+      )}
+      {label}
+    </button>
+  );
+}
+
+/**
+ * Compact toolbar button for the AI-classify flow. Reads its label and
+ * styling from the persisted classification store so the user can see at a
+ * glance whether AI is running / waiting for apply / errored, even after a
+ * refresh. Click always opens the dialog — never starts/cancels directly.
+ */
+function AiClassifyButton(props: {
+  bookmarksCount: number;
+  hasCategories: boolean;
+  onClick: () => void;
+}) {
+  const t = useT();
+  const inProgress = useBookmarkClassification(s => s.inProgress);
+  const pendingPreview = useBookmarkClassification(s => s.pendingPreview);
+  const lastError = useBookmarkClassification(s => s.lastError);
+
+  const running =
+    !!inProgress && !inProgress.interrupted && isAiClassifyActive();
+  const interrupted = !!inProgress && inProgress.interrupted;
+  const waiting = !!pendingPreview && !running;
+  const errored = !!lastError && !running;
+
+  let label: string;
+  let tone: 'amber' | 'emerald' | 'red' | 'neutral';
+  if (running) {
+    tone = 'amber';
+    label = t('ai_classify_btn_running', {
+      bytes: String(inProgress!.bytesReceived || 0),
+    });
+  } else if (waiting) {
+    tone = 'emerald';
+    label = t('ai_classify_btn_waiting');
+  } else if (interrupted) {
+    tone = 'amber';
+    label = t('ai_classify_btn_interrupted');
+  } else if (errored) {
+    tone = 'red';
+    label = t('ai_classify_btn_error');
+  } else {
+    tone = 'neutral';
+    label = props.hasCategories ? t('ai_reclassify') : t('ai_classify_btn');
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      disabled={props.bookmarksCount === 0 && !running && !waiting}
+      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        tone === 'amber'
+          ? 'bg-amber-400/15 text-amber-100/95 hover:bg-amber-400/25'
+          : tone === 'emerald'
+            ? 'bg-emerald-500/15 text-emerald-100/95 hover:bg-emerald-500/25'
+            : tone === 'red'
+              ? 'bg-red-500/15 text-red-100/95 hover:bg-red-500/25'
+              : 'bg-white/15 text-white hover:bg-white/25'
+      }`}
+    >
+      {running ? (
+        <Loader2 size={12} className="animate-spin" />
+      ) : interrupted || errored ? (
+        <AlertTriangle size={12} />
+      ) : (
+        <Sparkles size={12} />
       )}
       {label}
     </button>

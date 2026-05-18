@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { X, Check, Pencil } from 'lucide-react';
 import { useT } from '@/i18n';
 import { useEscKey } from '@/lib/hooks/useEscKey';
+import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { faviconUrl } from '@/lib/favicon';
 import type { Category } from '@/stores/bookmarkClassification';
 
@@ -19,6 +20,7 @@ export function ClassifyPreviewDialog(props: {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   useEscKey(true, props.onCancel);
+  useBodyScrollLock();
 
   const totalItems = useMemo(
     () => cats.reduce((sum, c) => sum + c.items.length, 0),

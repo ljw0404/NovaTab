@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useT } from '@/i18n';
 import { useEscKey } from '@/lib/hooks/useEscKey';
+import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { faviconUrl, hostname } from '@/lib/favicon';
 import { getProgress, useSiteTest } from '@/stores/siteTest';
 
@@ -65,6 +66,7 @@ export function SiteTestDialog(props: {
     if (deleting) return;
     props.onClose();
   });
+  useBodyScrollLock();
 
   const toggleOne = (url: string) => {
     setSelected(prev => {

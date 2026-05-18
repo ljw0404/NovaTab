@@ -1,12 +1,14 @@
 import { motion } from 'framer-motion';
 import { AlertTriangle, RotateCcw, Plus } from 'lucide-react';
 import { useT } from '@/i18n';
+import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { useSpeedDial } from '@/stores/speedDial';
 import { declineRestore, restoreFromMirror } from '@/lib/hub-engine';
 
 export function HubMissingDialog() {
   const t = useT();
   const mirror = useSpeedDial(s => s.missingMirror);
+  useBodyScrollLock(!!mirror);
 
   if (!mirror) return null;
 

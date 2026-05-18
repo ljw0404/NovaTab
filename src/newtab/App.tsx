@@ -18,6 +18,7 @@ import { useCloudSync } from '@/stores/cloudSync';
 import { startCloudSync, stopCloudSync } from '@/lib/cloud-sync-engine';
 import { initHubEngine } from '@/lib/hub-engine';
 import { bootSiteTestEngine } from '@/lib/site-test-engine';
+import { bootAiClassifyEngine } from '@/lib/ai-classify-engine';
 
 export default function App() {
   const theme = useSettings(s => s.theme);
@@ -35,6 +36,10 @@ export default function App() {
     // Site-test runs in the background and resumes from the persisted store
     // if a test was in progress when the page was previously closed.
     bootSiteTestEngine();
+    // AI classify can't *resume* (the streaming fetch dies with the page),
+    // but the engine boot marks any orphaned `inProgress` as interrupted so
+    // the dialog can offer a clean retry/discard path.
+    bootAiClassifyEngine();
   }, []);
 
   // Auto-sync: start the cloud sync engine while the user is signed in.

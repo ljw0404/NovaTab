@@ -11,6 +11,7 @@ import {
 import { useT } from '@/i18n';
 import { useSettings } from '@/stores/settings';
 import { useEscKey } from '@/lib/hooks/useEscKey';
+import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { CloudSyncSection } from './CloudSyncSection';
 import { WallpaperSection } from './WallpaperSection';
 import { BackupSection } from './BackupSection';
@@ -34,6 +35,7 @@ export function SettingsDrawer() {
   // ESC pops the sub-panel first; only when on main does it close the drawer.
   useEscKey(open && view === 'ai', () => setView('main'));
   useEscKey(open && view === 'main', () => setOpen(false));
+  useBodyScrollLock(open);
 
   // When the drawer is closed, always return to the main view next time.
   useEffect(() => {

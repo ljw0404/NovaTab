@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Folder } from 'lucide-react';
 import { useT } from '@/i18n';
 import { useEscKey } from '@/lib/hooks/useEscKey';
+import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { useSpeedDial } from '@/stores/speedDial';
 
 type Props = {
@@ -19,6 +20,7 @@ export function FolderDialog({ mode, onClose }: Props) {
   const [title, setTitle] = useState(editing?.title ?? '');
 
   useEscKey(true, onClose);
+  useBodyScrollLock();
 
   const submit = async () => {
     const t = title.trim();

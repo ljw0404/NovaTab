@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSettings } from '@/stores/settings';
 import { localeForDate } from '@/i18n';
@@ -62,7 +62,10 @@ export function Clock() {
  *  ─ AnimatePresence's default concurrent mode keeps old + new digits both
  *    rendered briefly so they swap in a single smooth motion (slot-machine).
  */
-function FlipDigit({ value }: { value: string }) {
+// memo: when seconds tick the parent re-renders all 6 digits, but most
+// digits' `value` hasn't changed. memo skips re-render for unchanged digits,
+// so only the actually-mutating slot (and its AnimatePresence) runs.
+const FlipDigit = memo(function FlipDigit({ value }: { value: string }) {
   return (
     <span className="relative inline-block align-baseline">
       <span aria-hidden="true" className="invisible">
@@ -89,4 +92,4 @@ function FlipDigit({ value }: { value: string }) {
       </span>
     </span>
   );
-}
+});

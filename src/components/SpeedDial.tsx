@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, Pencil, Folder, FolderPlus, LinkIcon } from 'lucide-react';
 import {
@@ -20,6 +20,7 @@ import {
 import { faviconUrl } from '@/lib/favicon';
 import { useT } from '@/i18n';
 import { useEscKey } from '@/lib/hooks/useEscKey';
+import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { useSettings } from '@/stores/settings';
 import { useSpeedDial } from '@/stores/speedDial';
 import type {
@@ -105,8 +106,8 @@ export function SpeedDial() {
   const openFolder =
     dialog.kind === 'open-folder'
       ? (entries.find(e => e.id === dialog.folderId && e.kind === 'folder') as
-          | SpeedDialFolder
-          | undefined)
+        | SpeedDialFolder
+        | undefined)
       : undefined;
 
   return (
@@ -242,6 +243,7 @@ function SortableEntry(props: {
         sortableStyle={style}
         sortableAttrs={attributes}
         sortableListeners={listeners}
+        isDragging={isDragging}
         onEdit={() => props.onEditPin(props.entry as SpeedDialPin)}
         onRemove={() => props.onRequestDelete(props.entry)}
       />
@@ -254,6 +256,7 @@ function SortableEntry(props: {
       sortableStyle={style}
       sortableAttrs={attributes}
       sortableListeners={listeners}
+      isDragging={isDragging}
       onOpen={() => props.onOpenFolder(props.entry as SpeedDialFolder)}
       onEdit={() => props.onEditFolder(props.entry as SpeedDialFolder)}
       onRemove={() => props.onRequestDelete(props.entry)}
@@ -346,7 +349,35 @@ type SortableProps = {
   sortableStyle?: React.CSSProperties;
   sortableAttrs?: DraggableAttributes;
   sortableListeners?: SyntheticListenerMap;
+  isDragging?: boolean;
 };
+
+// Suppress the click the browser fires on the wrapper after a dnd-kit drag —
+// without this, releasing a dragged pin navigates into the site. We mirror
+// dnd-kit's `isDragging` into a ref (so it stays true synchronously through
+// the click event that fires after pointerup) and reset it on each new
+// pointerdown. Capture-phase handlers run before the inner anchor/button
+// receives the click, so we can preventDefault (anchor nav) and
+// stopPropagation (button onClick) before they take effect.
+function useDragClickGuard(isDragging?: boolean) {
+  const sawDrag = useRef(false);
+  useEffect(() => {
+    if (isDragging) sawDrag.current = true;
+  }, [isDragging]);
+  return {
+    onPointerDownCapture: () => {
+      sawDrag.current = false;
+    },
+    onClickCapture: (e: React.MouseEvent) => {
+      // detail===0 means keyboard-triggered (Enter) — never suppress those.
+      if (sawDrag.current && e.detail > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        sawDrag.current = false;
+      }
+    },
+  };
+}
 
 function PinCard(
   props: {
@@ -355,13 +386,15 @@ function PinCard(
     onRemove: () => void;
   } & SortableProps
 ) {
-  const pointerDownPos = useRef<{ x: number; y: number } | null>(null);
+  const guard = useDragClickGuard(props.isDragging);
   return (
     <div
       ref={props.sortableRef}
       style={props.sortableStyle}
       {...(props.sortableAttrs ?? {})}
       {...(props.sortableListeners ?? {})}
+      onPointerDownCapture={guard.onPointerDownCapture}
+      onClickCapture={guard.onClickCapture}
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.6 }}
@@ -378,20 +411,6 @@ function PinCard(
           whileHover={{ y: -3, scale: 1.04 }}
           whileTap={{ scale: 0.96 }}
           className="glass glass-hover group relative flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-2xl p-3"
-          onPointerDown={e => {
-            pointerDownPos.current = { x: e.clientX, y: e.clientY };
-          }}
-          onClick={e => {
-            // Suppress the click that the browser fires after a drag release.
-            // detail===0 means keyboard-triggered, leave those alone.
-            const start = pointerDownPos.current;
-            pointerDownPos.current = null;
-            if (start && e.detail > 0) {
-              const dx = e.clientX - start.x;
-              const dy = e.clientY - start.y;
-              if (Math.hypot(dx, dy) > 5) e.preventDefault();
-            }
-          }}
         >
           <div className="absolute right-1.5 top-1.5 hidden gap-1 group-hover:flex">
             <IconBtn
@@ -435,13 +454,15 @@ function FolderCard(
 ) {
   const t = useT();
   const previews = props.folder.children.slice(0, 4);
-  const pointerDownPos = useRef<{ x: number; y: number } | null>(null);
+  const guard = useDragClickGuard(props.isDragging);
   return (
     <div
       ref={props.sortableRef}
       style={props.sortableStyle}
       {...(props.sortableAttrs ?? {})}
       {...(props.sortableListeners ?? {})}
+      onPointerDownCapture={guard.onPointerDownCapture}
+      onClickCapture={guard.onClickCapture}
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.6 }}
@@ -455,19 +476,7 @@ function FolderCard(
       >
         <motion.button
           type="button"
-          onPointerDown={e => {
-            pointerDownPos.current = { x: e.clientX, y: e.clientY };
-          }}
-          onClick={e => {
-            const start = pointerDownPos.current;
-            pointerDownPos.current = null;
-            if (start && e.detail > 0) {
-              const dx = e.clientX - start.x;
-              const dy = e.clientY - start.y;
-              if (Math.hypot(dx, dy) > 5) return;
-            }
-            props.onOpen();
-          }}
+          onClick={props.onOpen}
           whileHover={{ y: -3, scale: 1.04 }}
           whileTap={{ scale: 0.96 }}
           aria-label={t('pin_folder_open')}
@@ -560,6 +569,7 @@ function FolderView(props: {
   const t = useT();
   const reorderEntry = useSpeedDial(s => s.reorderEntry);
   useEscKey(true, props.onClose);
+  useBodyScrollLock();
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -600,9 +610,9 @@ function FolderView(props: {
         exit={{ opacity: 0, scale: 0.92, y: 12 }}
         transition={{ type: 'spring', stiffness: 380, damping: 30 }}
         onClick={e => e.stopPropagation()}
-        className="glass-strong w-[640px] max-w-[92vw] rounded-3xl p-6"
+        className="glass-strong flex max-h-[78vh] w-[640px] max-w-[92vw] flex-col rounded-3xl p-6"
       >
-        <div className="mb-5 flex items-center gap-2">
+        <div className="mb-5 flex shrink-0 items-center gap-2">
           <Folder size={18} className="shrink-0 text-white/85" />
           <button
             type="button"
@@ -628,35 +638,37 @@ function FolderView(props: {
           </div>
         </div>
 
-        {props.folder.children.length === 0 ? (
-          <div className="rounded-2xl bg-white/5 px-4 py-12 text-center text-sm text-white/45">
-            {t('pin_folder_empty')}
-          </div>
-        ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={props.folder.children.map(c => c.id)}
-              strategy={rectSortingStrategy}
+        <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
+          {props.folder.children.length === 0 ? (
+            <div className="rounded-2xl bg-white/5 px-4 py-12 text-center text-sm text-white/45">
+              {t('pin_folder_empty')}
+            </div>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
             >
-              <div className="grid grid-cols-4 gap-3 sm:grid-cols-5">
-                {props.folder.children.map(pin => (
-                  <SortableFolderChild
-                    key={pin.id}
-                    pin={pin}
-                    onEdit={() => props.onEditPin(pin)}
-                    onRemove={() => props.onRemovePin(pin)}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
-        )}
+              <SortableContext
+                items={props.folder.children.map(c => c.id)}
+                strategy={rectSortingStrategy}
+              >
+                <div className="grid grid-cols-4 gap-3 sm:grid-cols-5">
+                  {props.folder.children.map(pin => (
+                    <SortableFolderChild
+                      key={pin.id}
+                      pin={pin}
+                      onEdit={() => props.onEditPin(pin)}
+                      onRemove={() => props.onRemovePin(pin)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
+        </div>
 
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex shrink-0 justify-end">
           <button
             type="button"
             onClick={props.onAddPin}
@@ -686,6 +698,7 @@ function SortableFolderChild(props: {
       sortableStyle={style}
       sortableAttrs={attributes}
       sortableListeners={listeners}
+      isDragging={isDragging}
       onEdit={props.onEdit}
       onRemove={props.onRemove}
     />

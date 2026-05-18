@@ -161,7 +161,19 @@ export function MeshGradientCanvas() {
       blobs = makeBlobs(w, h);
     };
 
+    // Cap to ~30fps. The whole animation is a slow breathing cycle (14s) +
+    // a 20s palette crossfade — neither benefits from 60fps. Halving the
+    // frame rate halves the GPU cost (7 radial gradients + saturate +
+    // backdrop-blur compositing).
+    const FRAME_MS = 1000 / 30;
+    let lastFrame = 0;
+
     const draw = (t: number) => {
+      if (t - lastFrame < FRAME_MS) {
+        rafRef.current = requestAnimationFrame(draw);
+        return;
+      }
+      lastFrame = t;
       const w = window.innerWidth;
       const h = window.innerHeight;
       const isDark =

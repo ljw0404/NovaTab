@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { AlertTriangle, Check } from 'lucide-react';
 import { useT } from '@/i18n';
 import { useEscKey } from '@/lib/hooks/useEscKey';
+import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { hostname } from '@/lib/favicon';
 
 /**
@@ -25,6 +26,7 @@ export function ConfirmDeleteDialog(props: {
   const [remember, setRemember] = useState(false);
 
   useEscKey(true, props.onClose);
+  useBodyScrollLock();
 
   return (
     <motion.div

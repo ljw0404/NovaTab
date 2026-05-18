@@ -16,6 +16,9 @@ export type ClassifyProgress = {
   bookmarkCount: number;
   reasoning: string;
   bytesReceived: number;
+  /** Set to true when the engine boots and finds an orphaned `inProgress`
+   *  (i.e. the page was refreshed mid-stream — the original fetch is dead). */
+  interrupted?: boolean;
 };
 
 type State = {
@@ -28,7 +31,15 @@ type State = {
   showOriginal: boolean;
   /** Non-null while a classification is running OR was interrupted. */
   inProgress: ClassifyProgress | null;
+  /** Result of a finished classify run, awaiting the user's "apply". When
+   *  non-null, the AI classify dialog shows the preview UI. */
+  pendingPreview: Category[] | null;
+  /** Last error message from a failed classify run. */
+  lastError: string | null;
   setCategories: (cats: Category[] | null) => void;
+  setPendingPreview: (cats: Category[] | null) => void;
+  setLastError: (err: string | null) => void;
+  markInProgressInterrupted: () => void;
   /** Soft reset — keep AI cache, just show original. */
   showOriginalView: () => void;
   /** Bring back the AI-organized view if a cache exists. */
@@ -50,12 +61,16 @@ export const useBookmarkClassification = create<State>()(
       classifiedAt: null,
       showOriginal: false,
       inProgress: null,
+      pendingPreview: null,
+      lastError: null,
       setCategories: cats =>
         set({
           categories: cats,
           classifiedAt: cats ? Date.now() : null,
           showOriginal: false,
           inProgress: null,
+          pendingPreview: null,
+          lastError: null,
         }),
       showOriginalView: () => set({ showOriginal: true }),
       restoreAiView: () => set({ showOriginal: false }),
@@ -65,6 +80,8 @@ export const useBookmarkClassification = create<State>()(
           classifiedAt: null,
           showOriginal: false,
           inProgress: null,
+          pendingPreview: null,
+          lastError: null,
         }),
       beginClassify: bookmarkCount =>
         set({
@@ -73,7 +90,11 @@ export const useBookmarkClassification = create<State>()(
             bookmarkCount,
             reasoning: '',
             bytesReceived: 0,
+            interrupted: false,
           },
+          // Starting fresh clears any stale result/error from a previous run.
+          pendingPreview: null,
+          lastError: null,
         }),
       updateProgress: patch => {
         const cur = get().inProgress;
@@ -81,6 +102,13 @@ export const useBookmarkClassification = create<State>()(
         set({ inProgress: { ...cur, ...patch } });
       },
       endClassify: () => set({ inProgress: null }),
+      setPendingPreview: cats => set({ pendingPreview: cats }),
+      setLastError: err => set({ lastError: err }),
+      markInProgressInterrupted: () => {
+        const cur = get().inProgress;
+        if (!cur || cur.interrupted) return;
+        set({ inProgress: { ...cur, interrupted: true } });
+      },
     }),
     {
       name: 'glass-start:bookmark-classification',

@@ -12,6 +12,7 @@ import { faviconUrl, hostname } from '@/lib/favicon';
 import { useT } from '@/i18n';
 import { useSettings } from '@/stores/settings';
 import { useEscKey } from '@/lib/hooks/useEscKey';
+import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { formatRelative } from '@/lib/relative-time';
 import { BookmarkActionMenu } from './BookmarkActionMenu';
 import { BookmarkEditDialog } from './BookmarkEditDialog';
@@ -58,6 +59,7 @@ export function Drawer() {
 
   // ESC ordering: dialog/menu/edit eat ESC first; then drawer closes.
   useEscKey(open && !pendingDelete && !menu && !editing, () => setOpen(false));
+  useBodyScrollLock(open);
 
   useEffect(() => {
     if (!open) return;

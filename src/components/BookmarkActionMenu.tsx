@@ -4,6 +4,7 @@ import { Pin, PinOff, Pencil, Trash2 } from 'lucide-react';
 import { useT } from '@/i18n';
 import { useSpeedDial } from '@/stores/speedDial';
 import { findPinByUrl } from '@/lib/hub-folder';
+import { useEscKey } from '@/lib/hooks/useEscKey';
 
 /**
  * Floating popup menu attached to a bookmark — opened by the "more" button
@@ -25,23 +26,23 @@ export function BookmarkActionMenu(props: {
   const pinned = useSpeedDial(s => !!findPinByUrl(s.entries, props.url));
   const togglePin = useSpeedDial(s => s.togglePinByUrl);
 
-  // Close on outside click + Escape.
+  // Close on outside click.
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         props.onClose();
       }
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') props.onClose();
-    };
     document.addEventListener('mousedown', onClick);
-    document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mousedown', onClick);
-      document.removeEventListener('keydown', onKey);
     };
   }, [props]);
+
+  // Escape uses the centralized stack — the top-most active handler
+  // wins, so opening this menu inside another overlay (drawer, dropdown)
+  // won't double-trigger the parent's own ESC handler.
+  useEscKey(true, props.onClose);
 
   // Clamp inside viewport so right-clicks near edges don't render off-screen.
   const MENU_W = 180;

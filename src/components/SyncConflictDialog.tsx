@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { Laptop, Cloud, GitMerge } from 'lucide-react';
 import { useT } from '@/i18n';
 import { useEscKey } from '@/lib/hooks/useEscKey';
+import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import type { SyncEnvelope } from '@/lib/cloud-sync';
 
 export function SyncConflictDialog(props: {
@@ -12,6 +13,7 @@ export function SyncConflictDialog(props: {
 }) {
   const t = useT();
   useEscKey(true, props.onClose);
+  useBodyScrollLock();
 
   return (
     <motion.div

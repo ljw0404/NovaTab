@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Plus, ArrowRight, BookMarked, History } from 'lucide-react';
 import { useT } from '@/i18n';
 import { useEscKey } from '@/lib/hooks/useEscKey';
+import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 import { useSpeedDial } from '@/stores/speedDial';
 import { fetchSuggestions, type Suggestion } from '@/lib/suggest';
 import { faviconUrl, hostname } from '@/lib/favicon';
@@ -36,6 +37,7 @@ export function PinDialog({ initialFolderId, editing, onClose }: Props) {
   const [folderId, setFolderId] = useState<string | null>(initialFolderId ?? null);
 
   useEscKey(true, onClose);
+  useBodyScrollLock();
 
   // Suggestions only when in "add" mode, not when editing an existing pin.
   useEffect(() => {

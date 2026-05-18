@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Pencil } from 'lucide-react';
 import { useT } from '@/i18n';
 import { useEscKey } from '@/lib/hooks/useEscKey';
+import { useBodyScrollLock } from '@/lib/hooks/useBodyScrollLock';
 
 export function BookmarkEditDialog(props: {
   initialTitle: string;
@@ -18,6 +19,7 @@ export function BookmarkEditDialog(props: {
   useEscKey(true, () => {
     if (!busy) props.onClose();
   });
+  useBodyScrollLock();
 
   const submit = async () => {
     if (!url.trim()) return;
