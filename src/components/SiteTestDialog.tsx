@@ -82,6 +82,13 @@ export function SiteTestDialog(props: {
 
   useEscKey(true, () => {
     if (deleting) return;
+    // While the confirm-delete modal is open ESC closes IT, not the whole
+    // dialog — otherwise pressing ESC to back out of the confirmation
+    // would also dismiss the underlying results.
+    if (confirmingDelete) {
+      setConfirmingDelete(false);
+      return;
+    }
     props.onClose();
   });
   useBodyScrollLock();
@@ -391,22 +398,6 @@ export function SiteTestDialog(props: {
               </div>
             </div>
 
-            <AnimatePresence>
-              {confirmingDelete && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden"
-                >
-                  <div className="mb-3 flex items-start gap-2 rounded-xl bg-red-500/15 px-3 py-2.5 text-xs text-red-200/90 ring-1 ring-red-300/20">
-                    <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                    <span>{t('site_test_delete_warn')}</span>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             <div className="flex justify-end gap-2">
               <button
                 type="button"
@@ -416,35 +407,17 @@ export function SiteTestDialog(props: {
               >
                 {t('site_test_close')}
               </button>
-              {!confirmingDelete ? (
-                <button
-                  type="button"
-                  onClick={() => setConfirmingDelete(true)}
-                  disabled={selected.size === 0}
-                  className="flex items-center gap-1.5 rounded-xl bg-red-500/80 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Trash2 size={13} />
-                  {t('site_test_delete_selected', {
-                    n: String(selected.size),
-                  })}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={doDelete}
-                  disabled={deleting}
-                  className="flex items-center gap-1.5 rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50"
-                >
-                  {deleting ? (
-                    <Loader2 size={13} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={13} />
-                  )}
-                  {t('site_test_delete_selected', {
-                    n: String(selected.size),
-                  })}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(true)}
+                disabled={selected.size === 0 || deleting}
+                className="flex items-center gap-1.5 rounded-xl bg-red-500/80 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2 size={13} />
+                {t('site_test_delete_selected', {
+                  n: String(selected.size),
+                })}
+              </button>
             </div>
           </>
         )}
@@ -461,6 +434,109 @@ export function SiteTestDialog(props: {
           </div>
         )}
       </motion.div>
+
+      {/* Second-level confirmation modal. Rendered as a sibling of the dialog
+          body and as a child of the same backdrop so its backdrop click
+          handler (closing the confirm modal) doesn't bubble up to the
+          SiteTestDialog's outer onClick (which would close the whole dialog
+          mid-delete). z-[90] sits above the dialog's z-[80]. */}
+      <AnimatePresence>
+        {confirmingDelete && (
+          <motion.div
+            key="confirm-delete-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={e => {
+              e.stopPropagation();
+              if (!deleting) setConfirmingDelete(false);
+            }}
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 12 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+              onClick={e => e.stopPropagation()}
+              className="glass-strong w-[460px] max-w-[92vw] rounded-3xl p-6"
+            >
+              <div className="mb-3 flex items-start gap-3">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-500/15 text-red-300">
+                  <AlertTriangle size={17} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-base font-medium text-white">
+                    {t('site_test_delete_confirm_title', {
+                      n: String(selected.size),
+                    })}
+                  </div>
+                  <div className="mt-1 text-xs leading-relaxed text-white/65">
+                    {t('site_test_delete_warn')}
+                  </div>
+                </div>
+              </div>
+
+              {/* Show up to 5 items so the user can sanity-check what's
+                  actually about to be deleted before committing. */}
+              <div className="mb-5 max-h-[180px] space-y-1 overflow-y-auto rounded-xl bg-white/5 px-3 py-2">
+                {Array.from(selected)
+                  .slice(0, 5)
+                  .map(url => (
+                    <div key={url} className="flex items-center gap-2">
+                      <img
+                        src={faviconUrl(url, 32)}
+                        alt=""
+                        className="h-3.5 w-3.5 shrink-0 rounded"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs text-white/90">
+                          {titles[url] || url}
+                        </div>
+                        <div className="truncate text-[10px] text-white/45">
+                          {hostname(url)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                {selected.size > 5 && (
+                  <div className="pt-1 text-[11px] text-white/45">
+                    {t('site_test_delete_confirm_more', {
+                      n: String(selected.size - 5),
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={deleting}
+                  className="rounded-xl px-4 py-2 text-sm text-white/75 hover:bg-white/10 disabled:opacity-50"
+                >
+                  {t('cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={doDelete}
+                  disabled={deleting}
+                  className="flex items-center gap-1.5 rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50"
+                >
+                  {deleting ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={13} />
+                  )}
+                  {t('site_test_delete_selected', {
+                    n: String(selected.size),
+                  })}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
