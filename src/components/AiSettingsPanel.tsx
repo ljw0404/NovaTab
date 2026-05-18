@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Command } from 'cmdk';
 import {
   RefreshCw,
   Eye,
@@ -37,32 +38,6 @@ export function AiSettingsPanel() {
   const [testResult, setTestResult] = useState<
     { ok: true; count: number } | { ok: false; error: string } | null
   >(null);
-  /**
-   * True when `customModel` arrived via a click on a dropdown row rather
-   * than via the keyboard — the dropdown shows ALL models in that case
-   * (so the user can keep browsing) instead of collapsing the filter to
-   * just the selected row. Reset to false the moment the user types.
-   */
-  const [pickedFromList, setPickedFromList] = useState(false);
-
-  /**
-   * Live substring filter for the dropdown.
-   *
-   *  - empty query → show all (just-opened state).
-   *  - `pickedFromList` → show all (the user clicked a row; the typed
-   *    value happens to equal a model id, but it's not "their filter").
-   *  - otherwise → case-insensitive substring match. Note this fires
-   *    even when the typed value happens to exactly match an existing
-   *    model id — that's still a filter, just a 1-result filter, and
-   *    suppressing it broke the "gpt-5" case.
-   */
-  const filteredModels = useMemo(() => {
-    const q = customModel.trim().toLowerCase();
-    if (!q) return models;
-    if (pickedFromList) return models;
-    return models.filter(m => m.toLowerCase().includes(q));
-  }, [models, customModel, pickedFromList]);
-  const isFiltering = !pickedFromList && customModel.trim().length > 0;
 
   /**
    * The model input field — the dropdown is portaled to <body>, so it needs
@@ -128,17 +103,6 @@ export function AiSettingsPanel() {
       }
       const list = await listModels(customBaseUrl, customApiKey);
       setModels(list);
-      // If the persisted customModel was one of the just-returned ids,
-      // treat it as a prior selection so opening the menu shows ALL
-      // models rather than narrowing to the single matching row.
-      if (
-        customModel &&
-        list.some(m => m.toLowerCase() === customModel.toLowerCase())
-      ) {
-        setPickedFromList(true);
-      } else {
-        setPickedFromList(false);
-      }
       setModelMenuOpen(true);
     } catch (e) {
       setModelsError(e instanceof Error ? e.message : String(e));
@@ -212,137 +176,141 @@ export function AiSettingsPanel() {
                 </div>
               </Field>
 
-              <Field label={t('ai_model')}>
-                <div ref={modelFieldRef} className="relative">
-                  <input
-                    type="text"
-                    value={customModel}
-                    onChange={e => {
-                      setCustomModel(e.target.value);
-                      // Any keystroke means "user is filtering" — clear the
-                      // pickedFromList flag so the filter actually applies
-                      // even if their typed text happens to equal a model id.
-                      setPickedFromList(false);
-                      // Typing also re-opens the dropdown so the user can see
-                      // the filter narrow live — without this, dismissing the
-                      // menu (e.g. click-outside) and then typing would leave
-                      // the user filtering against an invisible list.
-                      if (models.length > 0) setModelMenuOpen(true);
-                    }}
-                    // Once we've fetched the model list at least once,
-                    // treat the input as a combobox trigger — focus or
-                    // click re-opens the cached list without re-hitting
-                    // the API.
-                    onFocus={() => {
-                      if (models.length > 0) setModelMenuOpen(true);
-                    }}
-                    onClick={() => {
-                      if (models.length > 0) setModelMenuOpen(true);
-                    }}
-                    onKeyDown={e => {
-                      // ESC: if filtering, just clear the filter (keep the
-                      // dropdown open so the user can re-browse). If not
-                      // filtering, close the dropdown.
-                      if (e.key === 'Escape' && modelMenuOpen) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (isFiltering) setCustomModel('');
-                        else setModelMenuOpen(false);
-                      }
-                    }}
-                    placeholder={t('ai_model_placeholder')}
-                    className="w-full rounded-xl bg-black/25 px-3 py-2 pr-28 text-sm text-white placeholder-white/35 outline-none ring-1 ring-white/10 focus:ring-white/30"
-                  />
-                  <button
-                    type="button"
-                    onClick={fetchModels}
-                    disabled={!canFetch || loadingModels}
-                    className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-lg bg-white/15 px-2.5 py-1 text-[11px] text-white/85 transition hover:bg-white/25 disabled:opacity-40 disabled:hover:bg-white/15"
-                  >
-                    <RefreshCw
-                      size={11}
-                      className={loadingModels ? 'animate-spin' : ''}
-                    />
-                    {loadingModels ? t('ai_fetch_models_loading') : t('ai_fetch_models')}
-                    {!loadingModels && models.length > 0 && (
-                      <ChevronDown size={10} className="opacity-60" />
-                    )}
-                  </button>
-                </div>
-
-                {modelsError && (
-                  <div className="mt-2 flex items-start gap-2 rounded-xl bg-red-500/15 px-3 py-2 text-[11px] text-red-200/85">
-                    <AlertCircle size={12} className="mt-0.5 shrink-0" />
-                    <span className="break-all">
-                      {t('ai_fetch_models_error', { err: modelsError })}
-                    </span>
-                  </div>
-                )}
-                {modelMenuOpen && !loadingModels && models.length === 0 && !modelsError && (
-                  <div className="mt-2 text-[11px] text-white/45">
-                    {t('ai_fetch_models_empty')}
-                  </div>
-                )}
-              </Field>
-      </div>
-
-      {/* Model dropdown — portaled to <body> with `position: fixed` so it
-          escapes the SettingsDrawer's multi-layer overflow-hidden chain
-          (drawer panel → tabs container → scrollable column) which would
-          otherwise clip a normal absolute-positioned popover. */}
-      {createPortal(
-        <AnimatePresence>
-          {modelMenuOpen && models.length > 0 && menuRect && (
-            <>
-              {/* Click-outside catcher. Above the drawer's own backdrop
-                  (z-40) but below the dropdown itself. */}
-              <div
-                className="fixed inset-0 z-[60]"
-                onClick={() => setModelMenuOpen(false)}
-              />
-              <motion.div
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.15 }}
-                style={{
-                  top: menuRect.top,
-                  left: menuRect.left,
-                  width: menuRect.width,
+              {/* Model picker — uses the `cmdk` combobox so filtering,
+                  keyboard navigation (↑↓ Enter), and the empty state are
+                  handled by a battle-tested library instead of hand-rolled
+                  state. The custom filter forces strict substring (cmdk's
+                  default is permissive fuzzy, which surfaces unrelated
+                  models for short queries). */}
+              <Command
+                shouldFilter
+                filter={(value, search) => {
+                  if (!search) return 1;
+                  return value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
                 }}
-                className="glass-strong fixed z-[61] max-h-64 overflow-y-auto rounded-2xl p-1.5 shadow-2xl"
               >
-                {filteredModels.length === 0 ? (
-                  <div className="px-3 py-2.5 text-[11px] text-white/55">
-                    {t('ai_fetch_models_no_match')}
-                  </div>
-                ) : (
-                  filteredModels.map(m => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => {
-                        setCustomModel(m);
-                        // Click = selection — show all on next re-open.
-                        setPickedFromList(true);
-                        setModelMenuOpen(false);
+                <Field label={t('ai_model')}>
+                  <div ref={modelFieldRef} className="relative">
+                    <Command.Input
+                      value={customModel}
+                      onValueChange={v => {
+                        setCustomModel(v);
+                        // Typing always (re-)opens the dropdown so the user
+                        // sees the filter narrow live — without this,
+                        // dismissing the menu via click-outside and then
+                        // typing would filter against an invisible list.
+                        if (models.length > 0) setModelMenuOpen(true);
                       }}
-                      className={`block w-full truncate rounded-xl px-3 py-2 text-left text-sm transition ${
-                        m === customModel
-                          ? 'bg-white/20 text-white'
-                          : 'text-white/80 hover:bg-white/10'
-                      }`}
+                      onFocus={() => {
+                        if (models.length > 0) setModelMenuOpen(true);
+                      }}
+                      onClick={() => {
+                        if (models.length > 0) setModelMenuOpen(true);
+                      }}
+                      onKeyDown={e => {
+                        // ESC: clear the filter if there is one; else
+                        // close the dropdown. stopPropagation prevents
+                        // SettingsDrawer's global ESC stack from also
+                        // firing (which would close the drawer).
+                        if (e.key === 'Escape' && modelMenuOpen) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (customModel) setCustomModel('');
+                          else setModelMenuOpen(false);
+                        }
+                      }}
+                      placeholder={t('ai_model_placeholder')}
+                      className="w-full rounded-xl bg-black/25 px-3 py-2 pr-28 text-sm text-white placeholder-white/35 outline-none ring-1 ring-white/10 focus:ring-white/30"
+                    />
+                    <button
+                      type="button"
+                      onClick={fetchModels}
+                      disabled={!canFetch || loadingModels}
+                      className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-lg bg-white/15 px-2.5 py-1 text-[11px] text-white/85 transition hover:bg-white/25 disabled:opacity-40 disabled:hover:bg-white/15"
                     >
-                      {m}
+                      <RefreshCw
+                        size={11}
+                        className={loadingModels ? 'animate-spin' : ''}
+                      />
+                      {loadingModels ? t('ai_fetch_models_loading') : t('ai_fetch_models')}
+                      {!loadingModels && models.length > 0 && (
+                        <ChevronDown size={10} className="opacity-60" />
+                      )}
                     </button>
-                  ))
+                  </div>
+
+                  {modelsError && (
+                    <div className="mt-2 flex items-start gap-2 rounded-xl bg-red-500/15 px-3 py-2 text-[11px] text-red-200/85">
+                      <AlertCircle size={12} className="mt-0.5 shrink-0" />
+                      <span className="break-all">
+                        {t('ai_fetch_models_error', { err: modelsError })}
+                      </span>
+                    </div>
+                  )}
+                  {modelMenuOpen && !loadingModels && models.length === 0 && !modelsError && (
+                    <div className="mt-2 text-[11px] text-white/45">
+                      {t('ai_fetch_models_empty')}
+                    </div>
+                  )}
+                </Field>
+
+                {/* Dropdown — portaled to <body> with `position: fixed`
+                    so it escapes the SettingsDrawer's multi-layer
+                    `overflow-hidden` chain (drawer panel → tabs container
+                    → scrollable column) that would otherwise clip it.
+                    Since the portal stays inside the React tree under
+                    <Command>, the List + Items still receive cmdk
+                    context for filtering and keyboard nav. */}
+                {createPortal(
+                  <AnimatePresence>
+                    {modelMenuOpen && models.length > 0 && menuRect && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-[60]"
+                          onClick={() => setModelMenuOpen(false)}
+                        />
+                        <motion.div
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.15 }}
+                          style={{
+                            top: menuRect.top,
+                            left: menuRect.left,
+                            width: menuRect.width,
+                          }}
+                          className="glass-strong fixed z-[61] overflow-hidden rounded-2xl p-1.5 shadow-2xl"
+                        >
+                          <Command.List className="max-h-64 overflow-y-auto">
+                            <Command.Empty className="px-3 py-2.5 text-[11px] text-white/55">
+                              {t('ai_fetch_models_no_match')}
+                            </Command.Empty>
+                            {models.map(m => (
+                              <Command.Item
+                                key={m}
+                                value={m}
+                                onSelect={v => {
+                                  setCustomModel(v);
+                                  setModelMenuOpen(false);
+                                }}
+                                className={`block w-full cursor-pointer truncate rounded-xl px-3 py-2 text-left text-sm transition data-[selected=true]:bg-white/15 data-[selected=true]:text-white ${
+                                  m === customModel
+                                    ? 'text-white'
+                                    : 'text-white/80'
+                                }`}
+                              >
+                                {m}
+                              </Command.Item>
+                            ))}
+                          </Command.List>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>,
+                  document.body
                 )}
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>,
-        document.body
-      )}
+              </Command>
+      </div>
 
       <div className="rounded-2xl bg-white/5 px-4 py-3.5">
         <button
