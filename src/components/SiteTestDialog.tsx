@@ -46,10 +46,10 @@ export function SiteTestDialog(props: {
   const [deleting, setDeleting] = useState(false);
   /** URLs currently being thorough-probed via the per-row 🔄 button. */
   const [retesting, setRetesting] = useState<Set<string>>(new Set());
-  /** URLs that just flipped from dead → alive on a manual retest. Shows a
-   *  "✓ 可以访问了" toast for one beat before the row animates out of `dead`
-   *  on the next render. */
-  const [justAlive, setJustAlive] = useState<Set<string>>(new Set());
+  /** Per-URL outcome of the most recent manual retest, held for ~1.5s so the
+   *  row can flash an explicit "可以访问 ✓" or "仍然无法访问" hint before
+   *  reverting (or, in the alive case, sliding out of the dead list). */
+  const [retestResult, setRetestResult] = useState<Record<string, 'alive' | 'dead'>>({});
 
   // Pre-select all dead URLs once results come in (only the first time we see
   // a "done" state — afterwards leave selection alone so user edits stick).
@@ -61,12 +61,14 @@ export function SiteTestDialog(props: {
   const dead = useMemo(() => {
     const out: { url: string; title: string }[] = [];
     for (const url of urls) {
-      if (results[url] === 'dead' || justAlive.has(url)) {
+      const r = results[url];
+      const justAlive = retestResult[url] === 'alive';
+      if (r === 'dead' || justAlive) {
         out.push({ url, title: titles[url] || url });
       }
     }
     return out;
-  }, [urls, results, titles, justAlive]);
+  }, [urls, results, titles, retestResult]);
 
   // Sync default-select-all on first arrival of `done` status.
   const [preselected, setPreselected] = useState(false);
@@ -98,6 +100,8 @@ export function SiteTestDialog(props: {
     else setSelected(new Set(dead.map(d => d.url)));
   };
 
+  const FLASH_MS = 1500;
+
   const doRetestOne = async (url: string) => {
     if (retesting.has(url)) return;
     setRetesting(prev => {
@@ -107,33 +111,31 @@ export function SiteTestDialog(props: {
     });
     try {
       const result = await retestOne(url);
+
       if (result === 'alive') {
-        // Flash a "now alive" hint, then drop from selection so a stray
-        // checked-state doesn't delete a working bookmark.
+        // Auto-uncheck so the user doesn't accidentally delete a now-working
+        // bookmark via a stray pre-selected checkbox.
         setSelected(prev => {
           if (!prev.has(url)) return prev;
           const next = new Set(prev);
           next.delete(url);
           return next;
         });
-        setJustAlive(prev => {
-          const next = new Set(prev);
-          next.add(url);
+      }
+
+      // Flash the outcome ('alive' or 'dead') on the row for FLASH_MS so the
+      // user gets explicit acknowledgement that the retest actually ran.
+      // Without this, a still-dead retest leaves no visible trace beyond the
+      // spinner stopping, which looks like nothing happened.
+      setRetestResult(prev => ({ ...prev, [url]: result }));
+      setTimeout(() => {
+        setRetestResult(prev => {
+          if (prev[url] !== result) return prev; // newer retest superseded it
+          const next = { ...prev };
+          delete next[url];
           return next;
         });
-        // The recomputed `dead` memo will drop this URL on the next render
-        // since results[url] is now 'alive', so the flash is naturally
-        // short-lived — but clean up the set after a delay regardless so it
-        // doesn't grow forever if the user re-tests in weird orders.
-        setTimeout(() => {
-          setJustAlive(prev => {
-            if (!prev.has(url)) return prev;
-            const next = new Set(prev);
-            next.delete(url);
-            return next;
-          });
-        }, 1200);
-      }
+      }, FLASH_MS);
     } finally {
       setRetesting(prev => {
         const next = new Set(prev);
@@ -275,7 +277,9 @@ export function SiteTestDialog(props: {
                 {dead.map(b => {
                   const checked = selected.has(b.url);
                   const isRetesting = retesting.has(b.url);
-                  const isJustAlive = justAlive.has(b.url);
+                  const flash = retestResult[b.url];
+                  const isJustAlive = flash === 'alive';
+                  const isJustDead = flash === 'dead';
                   return (
                     <div
                       key={b.url}
@@ -331,6 +335,10 @@ export function SiteTestDialog(props: {
                             <span className="text-emerald-300/90">
                               {t('site_test_retest_now_alive')}
                             </span>
+                          ) : isJustDead ? (
+                            <span className="text-red-300/90">
+                              {t('site_test_retest_still_dead')}
+                            </span>
                           ) : (
                             hostname(b.url)
                           )}
@@ -338,25 +346,40 @@ export function SiteTestDialog(props: {
                       </a>
 
                       {/* Per-row retest. Runs the thorough multi-angle probe
-                          (HEAD → GET → favicon image → www-swap retry).
-                          Hidden during the post-success flash since there's
-                          nothing left to retest. */}
+                          (HEAD → GET → favicon image → www-swap retry). The
+                          icon shifts to mirror the flash hint:
+                            - alive   → green ✓ CheckCircle2
+                            - dead    → red ✗ AlertTriangle (button stays
+                                        clickable in case the user wants to
+                                        run another attempt right away)
+                            - default → 🔄 RefreshCw  */}
                       {isJustAlive ? (
                         <CheckCircle2
                           size={15}
                           className="shrink-0 text-emerald-300"
+                          aria-label={t('site_test_retest_now_alive')}
                         />
                       ) : (
                         <button
                           type="button"
                           onClick={() => doRetestOne(b.url)}
                           disabled={isRetesting}
-                          title={t('site_test_retest_one')}
+                          title={
+                            isJustDead
+                              ? t('site_test_retest_still_dead')
+                              : t('site_test_retest_one')
+                          }
                           aria-label={t('site_test_retest_one')}
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white/55 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition disabled:opacity-50 ${
+                            isJustDead
+                              ? 'bg-red-500/15 text-red-300 hover:bg-red-500/25'
+                              : 'text-white/55 hover:bg-white/10 hover:text-white'
+                          }`}
                         >
                           {isRetesting ? (
                             <Loader2 size={13} className="animate-spin" />
+                          ) : isJustDead ? (
+                            <AlertTriangle size={13} />
                           ) : (
                             <RefreshCw size={13} />
                           )}
