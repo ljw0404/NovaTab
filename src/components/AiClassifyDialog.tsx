@@ -52,9 +52,9 @@ export function AiClassifyDialog(props: {
   const setLastError = useBookmarkClassification(s => s.setLastError);
   const endClassify = useBookmarkClassification(s => s.endClassify);
 
-  const aiUseCustom = useAiConfig(s => s.useCustom);
   const customBaseUrl = useAiConfig(s => s.customBaseUrl);
   const customModel = useAiConfig(s => s.customModel);
+  const isConfigured = useAiConfig(s => s.isConfigured());
 
   useEscKey(true, props.onClose);
   useBodyScrollLock();
@@ -94,10 +94,9 @@ export function AiClassifyDialog(props: {
     setLastError(null);
   };
 
-  const showConfig =
-    aiUseCustom && customBaseUrl && customModel
-      ? { mode: 'custom' as const, endpoint: customBaseUrl, model: customModel }
-      : { mode: 'builtin' as const };
+  const showConfig = isConfigured
+    ? { mode: 'custom' as const, endpoint: customBaseUrl, model: customModel }
+    : { mode: 'unset' as const };
 
   return (
     <motion.div
@@ -157,15 +156,15 @@ export function AiClassifyDialog(props: {
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
               <dt className="text-white/45">{t('ai_classify_endpoint')}</dt>
               <dd className="truncate text-white/85">
-                {showConfig.mode === 'builtin'
-                  ? t('ai_classify_endpoint_builtin')
-                  : showConfig.endpoint}
+                {showConfig.mode === 'custom'
+                  ? showConfig.endpoint
+                  : <span className="text-amber-200/80">{t('ai_not_configured_short')}</span>}
               </dd>
               <dt className="text-white/45">{t('ai_model')}</dt>
               <dd className="truncate text-white/85">
-                {showConfig.mode === 'builtin'
-                  ? t('ai_classify_model_builtin')
-                  : showConfig.model}
+                {showConfig.mode === 'custom'
+                  ? showConfig.model
+                  : <span className="text-amber-200/80">{t('ai_not_configured_short')}</span>}
               </dd>
               <dt className="text-white/45">{t('ai_classify_bookmark_count')}</dt>
               <dd className="text-white/85 tabular-nums">
@@ -227,15 +226,26 @@ export function AiClassifyDialog(props: {
               >
                 {t('cancel')}
               </button>
-              <button
-                type="button"
-                onClick={handleStart}
-                disabled={props.bookmarks.length === 0}
-                className="flex items-center gap-1.5 rounded-xl bg-white/90 px-4 py-2 text-sm font-medium text-black hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <PlayCircle size={14} />
-                {t('ai_classify_start')}
-              </button>
+              {isConfigured ? (
+                <button
+                  type="button"
+                  onClick={handleStart}
+                  disabled={props.bookmarks.length === 0}
+                  className="flex items-center gap-1.5 rounded-xl bg-white/90 px-4 py-2 text-sm font-medium text-black hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <PlayCircle size={14} />
+                  {t('ai_classify_start')}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={props.onOpenSettings}
+                  className="flex items-center gap-1.5 rounded-xl bg-amber-400/85 px-4 py-2 text-sm font-medium text-black hover:bg-amber-300"
+                >
+                  <SettingsIcon size={14} />
+                  {t('ai_open_settings')}
+                </button>
+              )}
             </>
           )}
 

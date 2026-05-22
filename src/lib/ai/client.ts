@@ -4,8 +4,22 @@ function normalizeBaseUrl(u: string): string {
   return u.replace(/\/+$/, '');
 }
 
+/** Marker error thrown when AI features run before the user configures them. */
+export class AiNotConfiguredError extends Error {
+  constructor() {
+    super('AI is not configured');
+    this.name = 'AiNotConfiguredError';
+  }
+}
+
+/**
+ * Returns the configured AI settings, or throws AiNotConfiguredError
+ * if the user hasn't filled in Base URL + Model in AI Settings yet.
+ */
 export function effectiveConfig(): EffectiveAiConfig {
-  return useAiConfig.getState().getEffective();
+  const cfg = useAiConfig.getState().getEffective();
+  if (!cfg) throw new AiNotConfiguredError();
+  return cfg;
 }
 
 /**

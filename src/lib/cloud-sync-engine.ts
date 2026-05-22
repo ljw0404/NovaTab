@@ -4,6 +4,7 @@ import { useBookmarkClassification } from '@/stores/bookmarkClassification';
 import {
   applyEnvelopeToLocal,
   hasChromeSync,
+  isLocalPristine,
   mergeEnvelopes,
   readLocal,
   readRemote,
@@ -213,20 +214,34 @@ function applyRemoteClassification(
 
 /**
  * Reconcile on engine startup: auto-merge local + remote so that pins/colors
- * from either side are preserved. Other settings prefer local.
+ * from either side are preserved. Other settings prefer local — EXCEPT when
+ * local is detected as fresh-install pristine, in which case we pull remote
+ * wholesale (otherwise the defaults this device boots with would wipe out
+ * the user's real settings on the next push).
  */
 async function reconcileOnStart() {
   setStatus('syncing');
   try {
-    const local = readLocal();
     const remote = await readRemote();
     if (!remote) {
+      // No remote — push our local up (even if pristine, this seeds the
+      // remote for next time and avoids a write-loop).
+      const local = readLocal();
       await writeRemote(local);
       lastHash = envHash(local);
       markSyncedNow();
       setStatus('idle');
       return;
     }
+    if (isLocalPristine()) {
+      // Fresh install (or wiped local data): readLocal() would only return
+      // defaults, and merging those would silently overwrite the user's
+      // real remote settings. Pull remote down wholesale instead.
+      applyRemoteEnvelopeAndMark(remote);
+      setStatus('idle');
+      return;
+    }
+    const local = readLocal();
     const merged = mergeEnvelopes(local, remote);
     const mergedHash = envHash(merged);
     const remoteHash = envHash(remote);

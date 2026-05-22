@@ -10,6 +10,12 @@ export const CLS_META_KEY = 'glass-start:cls-meta';
 export const CLS_CHUNK_PREFIX = 'glass-start:cls:';
 const CLS_CHUNK_MAX_BYTES = 7000;
 
+// Identifies the previously-signed-in user so that after a reinstall (which
+// wipes localStorage and therefore useCloudSync.user) the engine can come
+// back up automatically and pull AI classification + settings down from
+// chrome.storage.sync without the user having to click "Sign in" again.
+export const USER_KEY = 'glass-start:user';
+
 /**
  * Sync envelope no longer carries pins/folders: those live in the HubTabPinData
  * Chrome bookmark folder which Chrome syncs natively across devices. This
@@ -89,6 +95,40 @@ export async function writeRemote(env: SyncEnvelope): Promise<void> {
   });
 }
 
+/**
+ * Remember which user opted into cloud sync, in a place that survives a
+ * full reinstall — chrome.storage.sync is bound to the user's Google
+ * account, so the email follows them across browsers/installs as long as
+ * Chrome sync is enabled.
+ */
+export async function rememberUser(user: ChromeUser): Promise<void> {
+  if (!hasChromeSync()) return;
+  return new Promise((resolve, reject) => {
+    chrome.storage.sync.set({ [USER_KEY]: user }, () => {
+      const err = chrome.runtime.lastError;
+      if (err) reject(new Error(err.message));
+      else resolve();
+    });
+  });
+}
+
+export async function forgetUser(): Promise<void> {
+  if (!hasChromeSync()) return;
+  return new Promise(resolve => {
+    chrome.storage.sync.remove(USER_KEY, () => resolve());
+  });
+}
+
+export async function readRememberedUser(): Promise<ChromeUser | null> {
+  if (!hasChromeSync()) return null;
+  return new Promise(resolve => {
+    chrome.storage.sync.get(USER_KEY, res => {
+      const u = res[USER_KEY] as ChromeUser | undefined;
+      resolve(u && u.email ? u : null);
+    });
+  });
+}
+
 export function readLocal(): SyncEnvelope {
   const s = useSettings.getState();
   return {
@@ -151,6 +191,29 @@ export function hasMeaningfulData(env: SyncEnvelope | null | undefined): boolean
     s.locale !== undefined ||
     s.searchEngineId !== undefined
   );
+}
+
+/**
+ * Detect whether the local settings store has ever been user-modified on
+ * this device. zustand `persist` only writes to localStorage when state
+ * actually changes — on a fresh install (or after a "wipe local data") the
+ * `glass-start:settings` key simply doesn't exist yet.
+ *
+ * Why we need this: `readLocal()` always returns a populated envelope (the
+ * defaults: theme='dark', searchEngineId='google', etc.), so without a
+ * separate signal there's no way to tell "user actually picked dark theme"
+ * apart from "we just installed and dark is the default". Conflating the
+ * two lets fresh-install defaults overwrite real remote data during merge.
+ *
+ * Callers (firstSync, reconcileOnStart) short-circuit to "pull remote
+ * wholesale" when this returns true.
+ */
+export function isLocalPristine(): boolean {
+  try {
+    return localStorage.getItem('glass-start:settings') == null;
+  } catch {
+    return false;
+  }
 }
 
 export function envelopesEqual(a: SyncEnvelope, b: SyncEnvelope): boolean {

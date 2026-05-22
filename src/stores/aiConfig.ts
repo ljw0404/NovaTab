@@ -1,10 +1,5 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import {
-  DEFAULT_BASE_URL,
-  DEFAULT_API_KEY,
-  DEFAULT_MODEL,
-} from '@/lib/ai/defaults';
 
 export type EffectiveAiConfig = {
   baseUrl: string;
@@ -13,6 +8,8 @@ export type EffectiveAiConfig = {
 };
 
 type State = {
+  /** Legacy toggle; ignored by getEffective. Kept so old persisted state
+   *  doesn't get migration-noisy. */
   useCustom: boolean;
   customBaseUrl: string;
   customApiKey: string;
@@ -22,18 +19,20 @@ type State = {
   setCustomApiKey: (s: string) => void;
   setCustomModel: (s: string) => void;
   /**
-   * Returns the config the AI client should actually use. When the
-   * "custom" toggle is off (or any required field is blank), falls back
-   * to the bundled defaults — defaults are never exposed via this getter
-   * to the UI, only to the AI client.
+   * Returns the config the AI client should actually use, or `null` when
+   * AI is not fully configured. The built-in default endpoint is gone —
+   * AI features only work after the user fills in their own base URL +
+   * model (key is optional, the user's own proxy may or may not need it).
    */
-  getEffective: () => EffectiveAiConfig;
+  getEffective: () => EffectiveAiConfig | null;
+  /** Convenience: is AI configured enough to be used? */
+  isConfigured: () => boolean;
 };
 
 export const useAiConfig = create<State>()(
   persist(
     (set, get) => ({
-      useCustom: false,
+      useCustom: true, // kept truthy for backwards compat with older callers
       customBaseUrl: '',
       customApiKey: '',
       customModel: '',
@@ -43,26 +42,21 @@ export const useAiConfig = create<State>()(
       setCustomModel: s => set({ customModel: s.trim() }),
       getEffective: () => {
         const s = get();
-        // Custom mode: base URL + model are required; key may be empty (the
-        // user's own proxy might auth by other means, just like our built-in
-        // one does by Origin).
-        if (s.useCustom && s.customBaseUrl && s.customModel) {
-          return {
-            baseUrl: s.customBaseUrl,
-            apiKey: s.customApiKey,
-            model: s.customModel,
-          };
-        }
+        if (!s.customBaseUrl || !s.customModel) return null;
         return {
-          baseUrl: DEFAULT_BASE_URL,
-          apiKey: DEFAULT_API_KEY,
-          model: DEFAULT_MODEL,
+          baseUrl: s.customBaseUrl,
+          apiKey: s.customApiKey,
+          model: s.customModel,
         };
+      },
+      isConfigured: () => {
+        const s = get();
+        return !!s.customBaseUrl && !!s.customModel;
       },
     }),
     {
       name: 'glass-start:ai-config',
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => localStorage),
       partialize: state => ({
         useCustom: state.useCustom,

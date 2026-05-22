@@ -14,19 +14,43 @@ function escapeRegex(s: string): string {
 }
 
 /**
+ * Normalize a URL for dedup purposes. Two suggestions that point to the
+ * same logical page (same scheme + host + path + query, ignoring anchor
+ * and trailing slash) collapse to a single key.
+ *
+ *   https://example.com/foo  === https://example.com/foo/
+ *   https://example.com/foo  === https://example.com/foo#section
+ *   HTTPS://Example.com/foo  === https://example.com/foo
+ *
+ * Query strings are kept (?a=1 vs ?a=2 are usually different pages). Path
+ * case is preserved (some servers are case-sensitive). On parse failure we
+ * fall back to lowercasing the raw string so we still get some dedup.
+ */
+function normalizeUrlForDedup(url: string): string {
+  try {
+    const u = new URL(url);
+    let path = u.pathname;
+    if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
+    return `${u.protocol.toLowerCase()}//${u.host.toLowerCase()}${path}${u.search}`;
+  } catch {
+    return url.toLowerCase();
+  }
+}
+
+/**
  * Score an item against query words.
  *
  * Returns -1 if any word doesn't match anywhere in title / hostname / url,
  * so we can filter "folder-only" hits from chrome.bookmarks.search (which
  * matches against folder names too).
  *
- * Higher score = better match.
+ * Higher score = better match. Used to rank within a kind — overall ordering
+ * is bookmarks-first, history-second (see fetchSuggestions sort).
  *   1000+   title starts with the word
  *   600+    word boundary in title
  *   400+    title contains substring
  *   200+    hostname contains substring
  *   100+    url contains substring
- *    +50    bookmark boost
  */
 function score(
   item: { kind: Suggestion['kind']; title: string; url: string },
@@ -52,7 +76,6 @@ function score(
       return -1;
     }
   }
-  if (item.kind === 'bookmark') total += 50;
   return total;
 }
 
@@ -144,16 +167,23 @@ export async function fetchSuggestions(query: string): Promise<Suggestion[]> {
     if (s >= 0) scored.push({ ...item, score: s });
   }
 
-  scored.sort((a, b) => b.score - a.score);
+  // Order: bookmarks before history, then by score within each group. The
+  // dedupe pass below picks the first occurrence of each normalized-URL
+  // key, so by sorting kind first we guarantee that when a page appears
+  // as both a bookmark and a history entry, the bookmark version is kept.
+  scored.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'bookmark' ? -1 : 1;
+    return b.score - a.score;
+  });
 
-  // Dedupe by hostname + title (case-insensitive). Catches the "same forum
-  // thread visited at different post anchors" case: identical site + title
-  // means the same logical page even if URL paths differ.
+  // Dedupe by normalized URL — covers the common "I bookmarked the page
+  // and also have it in history" case, plus same-page-with-anchor and
+  // trailing-slash variants. Keeps query strings since ?a=1 vs ?a=2 are
+  // typically distinct pages.
   const seen = new Set<string>();
   const result: Suggestion[] = [];
   for (const item of scored) {
-    const host = hostname(item.url).toLowerCase();
-    const key = `${host}|${item.title.toLowerCase().trim()}`;
+    const key = normalizeUrlForDedup(item.url);
     if (seen.has(key)) continue;
     seen.add(key);
     result.push({

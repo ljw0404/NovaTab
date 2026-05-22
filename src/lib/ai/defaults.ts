@@ -1,14 +1,12 @@
-// Internal defaults used by the AI service when the user hasn't enabled
-// "custom AI config".
+// The built-in AI service was retired — operating a public proxy that
+// injects a server-side key isn't free, and embedding a real key in the
+// client leaks it to anyone with DevTools. Users must now configure their
+// own endpoint + key (see AiSettingsPanel).
 //
-// Auth strategy (Option A — Origin allowlist):
-//   The proxy at DEFAULT_BASE_URL authenticates the request by checking
-//   `Origin: chrome-extension://<our-id>` and injects the real upstream API
-//   key server-side. The client sends NO Authorization header for the
-//   built-in endpoint, so DevTools never reveals a real API key.
-//
-//   See lib/ai/client.ts — when apiKey is empty, the Authorization header
-//   is omitted entirely.
-export const DEFAULT_BASE_URL = 'https://sa.lijiwang.top';
+// These constants are kept (empty) only because lib/ai/client.ts uses them
+// as a fallback shape — getEffective() returns null when nothing is
+// configured, and callers gate on that. Nothing in the UI ever displays
+// them, and nothing is sent on the wire.
+export const DEFAULT_BASE_URL = '';
 export const DEFAULT_API_KEY = '';
-export const DEFAULT_MODEL = 'gpt-5.4';
+export const DEFAULT_MODEL = '';

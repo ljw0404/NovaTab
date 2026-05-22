@@ -174,6 +174,99 @@
   }
 }
 
+/*
+ * Skeleton tile shimmer — a soft highlight sweeps left-to-right across
+ * each placeholder. The animation is driven entirely by `transform:
+ * translateX` on a `::before` pseudo-element, which Chrome's compositor
+ * handles on its own layer — zero main-thread paint work per frame. The
+ * earlier `background-position` approach triggered a full repaint of
+ * each tile on every frame; with 21 tiles at 60fps that's a continuous
+ * ~3ms/frame main-thread tax that competed with pin-data loading and
+ * scroll. Switching to transform brought that to effectively 0ms.
+ */
+.skeleton-tile {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.skeleton-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.16) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  /*
+   * Per-column phase via a CSS custom property set inline from JSX.
+   * Inline styles don't reach pseudo-elements, but custom properties on
+   * the parent DO (the cascade carries them down to ::before).
+   */
+  animation: skeleton-shimmer-x 1.6s linear var(--shimmer-delay, 0ms) infinite;
+  /* `will-change` hints the compositor to promote this pseudo to its own
+     layer up-front so the first frame isn't a "layer-creation" cost. */
+  will-change: transform;
+}
+@keyframes skeleton-shimmer-x {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/*
+ * Single-card pop-in animation used when the user ADDS a new pin or folder
+ * (not on the initial batch render — the SpeedDial component decides which
+ * IDs are "new" via a ref-tracked seen-set). Pure transform + opacity, so
+ * the compositor handles it on a separate layer with zero main-thread
+ * work; safe even if applied while framer-motion's hover/tap interactions
+ * are also touching transforms on the inner element (the keyframe targets
+ * a wrapper div, hover/tap targets the anchor inside).
+ *
+ * The cubic-bezier (0.34, 1.56, 0.64, 1) is an ease-out-back curve: a
+ * tiny overshoot at the end gives the pin a subtle "lands and settles"
+ * feel without going full bouncy-cartoon.
+ */
+@keyframes pin-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.pin-pop-in {
+  animation: pin-pop-in 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/*
+ * Single coordinated entrance animation for the new-tab page's <main>.
+ * Replaces six per-section framer-motion entrances that staggered over
+ * ~600ms and translated each section's y position (causing layout +
+ * compositor work per frame). One CSS opacity fade is essentially free
+ * for the compositor — no JS runtime, no layout, no per-frame style
+ * commit, and the page reads as "settled" in 250ms instead of 600ms+.
+ */
+@keyframes app-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.app-fade-in {
+  animation: app-fade-in 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

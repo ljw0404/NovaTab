@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useSettings } from '@/stores/settings';
 
 type Blob = {
@@ -139,9 +139,13 @@ export function MeshGradientCanvas() {
     });
   }, []);
 
-  // useLayoutEffect so the first canvas frame is drawn BEFORE the browser paints,
-  // eliminating any black flash between body background and the animated gradient.
-  useLayoutEffect(() => {
+  // Plain useEffect (not useLayoutEffect) so mounting the canvas does NOT
+  // block the first paint of the page content above it. The body has a
+  // static gradient fallback in globals.css that covers the first frame;
+  // once this effect runs we kick off the rAF loop and the animated
+  // gradient takes over invisibly. This was the single biggest cause of
+  // initial-load jank on the new tab page.
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d', { alpha: false });
@@ -268,9 +272,11 @@ export function MeshGradientCanvas() {
     window.addEventListener('resize', resize);
     document.addEventListener('visibilitychange', onVisibility);
 
-    // Draw a synchronous first frame so the very first paint already
-    // contains the gradient — no black flash, no "fade in" delay.
-    draw(performance.now());
+    // Schedule the first frame via rAF instead of drawing synchronously.
+    // The browser commits its first paint of the page content first; the
+    // canvas fills in on the next frame (~16ms later) on top of the CSS
+    // gradient fallback so there's no perceptible black flash.
+    rafRef.current = requestAnimationFrame(draw);
 
     return () => {
       cancelAnimationFrame(rafRef.current);

@@ -10,6 +10,7 @@ import {
   getCurrentUser,
   hasChromeSync,
   hasMeaningfulData,
+  isLocalPristine,
   mergeEnvelopes,
   readLocal,
   readRemote,
@@ -78,9 +79,21 @@ export function CloudSyncSection() {
     setStatus('syncing');
     setError(null);
     try {
-      const local = readLocal();
       const remote = await readRemote();
-      const localHas = hasMeaningfulData(local);
+      // Fresh-install short-circuit: if the local settings store has never
+      // been touched on this device, anything readLocal() returns is just
+      // defaults. Treat that as "no local data" and pull remote wholesale
+      // — otherwise the merge step below would let defaults overwrite the
+      // user's real remote settings (and then push the corrupted version
+      // back up, permanently destroying them).
+      if (isLocalPristine() && remote) {
+        applyRemoteEnvelopeAndMark(remote);
+        setLastSyncedAt(Date.now());
+        setStatus('idle');
+        return;
+      }
+      const local = readLocal();
+      const localHas = hasMeaningfulData(local) && !isLocalPristine();
       const remoteHas = hasMeaningfulData(remote);
 
       if (!localHas && !remoteHas) {

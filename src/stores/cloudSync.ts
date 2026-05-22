@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { ChromeUser } from '@/lib/cloud-sync';
+import { rememberUser, forgetUser } from '@/lib/cloud-sync';
 
 type SyncStatus = 'idle' | 'syncing' | 'error';
 
@@ -22,7 +23,17 @@ export const useCloudSync = create<State>()(
       lastSyncedAt: null,
       status: 'idle',
       error: null,
-      setUser: u => set({ user: u }),
+      setUser: u => {
+        set({ user: u });
+        // Mirror to chrome.storage.sync so the sign-in survives reinstall —
+        // the engine reads it on boot and auto-resumes pulling cloud data
+        // without forcing the user to click "Sign in" again.
+        if (u) {
+          void rememberUser(u);
+        } else {
+          void forgetUser();
+        }
+      },
       setLastSyncedAt: ts => set({ lastSyncedAt: ts }),
       setStatus: s => set({ status: s }),
       setError: e => set({ error: e }),

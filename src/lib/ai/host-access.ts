@@ -1,5 +1,4 @@
 import { useAiConfig } from '@/stores/aiConfig';
-import { DEFAULT_BASE_URL } from './defaults';
 
 /**
  * Get the origin pattern (e.g. "https://example.com/*") for a base URL,
@@ -43,15 +42,16 @@ export async function requestHostAccess(baseUrl: string): Promise<boolean> {
 }
 
 /**
- * Ensure access to whatever base URL the effective AI config is pointing at.
- * Built-in default is already granted via `host_permissions`. For custom
- * endpoints, prompts the user — should only be called from a user gesture.
+ * Ensure access to whatever base URL the user has configured.
+ * Returns `not-configured` when AI isn't set up yet (no built-in fallback
+ * anymore). Must be called from a user gesture if a permission prompt
+ * might be needed.
  */
 export async function ensureCurrentEndpointAccess(): Promise<
-  { ok: true } | { ok: false; reason: 'denied' | 'invalid' }
+  { ok: true } | { ok: false; reason: 'denied' | 'invalid' | 'not-configured' }
 > {
   const cfg = useAiConfig.getState().getEffective();
-  if (cfg.baseUrl === DEFAULT_BASE_URL) return { ok: true };
+  if (!cfg) return { ok: false, reason: 'not-configured' };
 
   const pattern = originPattern(cfg.baseUrl);
   if (!pattern) return { ok: false, reason: 'invalid' };

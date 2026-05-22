@@ -39,7 +39,25 @@ export function SearchBar() {
   const totalRows = trimmed ? 1 + suggestions.length : 0;
   const listRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const formRef = useRef<HTMLFormElement>(null);
   const [stuck, setStuck] = useState(false);
+  // True when the search bar itself is pinned to the top of the viewport
+  // (the parent has `sticky top-4`). The glass tint is too transparent against
+  // a scrolled-up page, so we punch it darker in this state.
+  const [pageStuck, setPageStuck] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const el = formRef.current;
+      if (!el) return;
+      // sticky offset is top-4 (16px); 17px gives a 1-px slack so a hairline
+      // sub-pixel offset doesn't flicker the state.
+      setPageStuck(el.getBoundingClientRect().top <= 17);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Per-row action menu / edit / delete dialogs (right-click or "more" button
   // on a suggestion row).
@@ -257,8 +275,18 @@ export function SearchBar() {
   const placeholder = useMemo(() => t('search_placeholder'), [t]);
 
   return (
-    <form onSubmit={onSubmit} className="relative z-20 w-full max-w-2xl">
-      <div className="glass glass-hover flex items-center gap-3 rounded-full px-3 py-3 pr-5">
+    <form
+      ref={formRef}
+      onSubmit={onSubmit}
+      className="relative z-20 w-full max-w-2xl"
+    >
+      <div
+        className={`glass glass-hover flex items-center gap-3 rounded-full px-3 py-3 pr-5 transition-[background-color,box-shadow,border-color] duration-200 ${
+          pageStuck
+            ? '!bg-white/30 !border-white/30 !shadow-[0_12px_40px_rgba(0,0,0,0.38)] dark:!bg-black/60 dark:!border-white/15'
+            : ''
+        }`}
+      >
         <button
           type="button"
           onClick={() => setOpenEngine(v => !v)}
